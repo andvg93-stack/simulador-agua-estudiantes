@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de calidad de agua</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@300;400;600&display=swap');
+
+        :root {
+            --water-light: rgba(100, 180, 220, 1);
+            --water-mid: rgba(60, 130, 180, 1);
+            --water-dark: rgba(30, 70, 100, 1);
+            --light-level: 1;
+            --clarity-level: 1;
+            --bed-top-color: #5d4a3a;
+            --bed-mid-color: #4a3629;
+            --bed-bottom-color: #2a1810;
+            --ray-opacity: 0.55;
+            --ray-speed-mult: 1;
+            --ray-core-rgb: 232, 246, 255;
+            --ray-edge-rgb: 160, 210, 232;
+            --panel-bg: #eff3fb;
+            --card-bg: #ffffff;
+            --border: #d8e0ee;
+            --primary: #2c5ea8;
+            --text: #1d2e47;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Libre Franklin', sans-serif;
+            background: #132039;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            color: var(--text);
+        }
+
+        .app {
+            width: 100vw;
+            height: 100vh;
+            padding: 10px;
+            display: grid;
+            grid-template-rows: auto 1fr;
+            gap: 8px;
+            background: linear-gradient(180deg, #1a2f4f 0%, #10233d 100%);
+        }
+
+        .metrics-panel {
+            background: rgba(243, 247, 255, 0.97);
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            padding: 8px;
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 6px;
+        }
+
+        .metric-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 6px 8px;
+            min-height: 58px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .metric-label {
+            font-size: 11px;
+            color: #516d98;
+            margin-bottom: 4px;
+        }
+
+        .metric-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #132c50;
+        }
+
+        .content {
+            min-height: 0;
+            display: grid;
+            grid-template-columns: 1.95fr 1fr;
+            gap: 8px;
+        }
+
+        .scene-frame {
+            position: relative;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid #5e7aaa;
+            background: #0f1a2b;
+        }
+
+        .scene-frame::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image: url('assets/visual/background/river_background.webp');
+            background-size: cover;
+            background-position: center;
+            z-index: 1;
+        }
+
+        .scene-title {
+            position: absolute;
+            top: 10px;
+            left: 12px;
+            z-index: 30;
+            color: #ffffff;
+            font-size: 15px;
+            font-weight: 600;
+            background: rgba(8, 23, 43, 0.65);
+            padding: 4px 8px;
+            border-radius: 8px;
+        }
+
+        .scene-overlays {
+            position: absolute;
+            inset: 0;
+            z-index: 90;
+            pointer-events: none;
+        }
+
+        .water-overlay {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 0;
+        }
+        
+        .scene-overlay.plants {
+            opacity: 0.9;
+            z-index: 5;
+        }
+
+        .scene-overlay {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 10;
+        }
+
+        .treatment-overlay {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 99;
+            pointer-events: none;
+        }
+
+
+
+        .top-scene {
+            width: 100%;
+            height: 36%;
+            position: relative;
+            z-index: 2;
+        }
+
+        .top-scene img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            opacity: 0.85;
+        }
+
+        .cross-section {
+            width: 100%;
+            height: 64%;
+            position: relative;
+            z-index: 2;
+            overflow: hidden;
+        }
+
+        .water-waves {
+            position: absolute;
+            top: -2px;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            z-index: 28;
+            pointer-events: none;
+            overflow: visible;
+        }
+
+        .water-waves svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .wave {
+            animation: wave-animation 8s ease-in-out infinite;
+            transform-origin: center;
+        }
+
+        .wave:nth-child(1) {
+            animation-delay: 0s;
+            opacity: 0.7;
+        }
+
+        .wave:nth-child(2) {
+            animation-delay: -2s;
+            opacity: 0.5;
+        }
+
+        .wave:nth-child(3) {
+            animation-delay: -4s;
+            opacity: 0.3;
+        }
+
+        @keyframes wave-animation {
+            0%, 100% {
+                transform: translateX(0) scaleY(1);
+            }
+            25% {
+                transform: translateX(-5%) scaleY(1.1);
+            }
+            50% {
+                transform: translateX(-10%) scaleY(0.9);
+            }
+            75% {
+                transform: translateX(-5%) scaleY(1.05);
+            }
+        }
+
+        .river-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg,
+                    var(--water-light) 0%,
+                    var(--water-mid) 42%,
+                    var(--water-dark) 84%,
+                    var(--bed-top-color) 84%,
+                    var(--bed-bottom-color) 100%);
+            overflow: visible;
+            box-shadow: inset 0 10px 24px rgba(0, 0, 0, 0.35);
+            transition: background 0.8s ease;
+            clip-path: url(#wave-clip);
+        }
+
+        .river-container::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            z-index: 18;
+            pointer-events: none;
+            background: linear-gradient(
+                180deg,
+                rgba(255, 255, 255, calc(0.16 * var(--light-level))) 0%,
+                rgba(255, 255, 255, calc(0.07 * var(--light-level))) 28%,
+                rgba(255, 250, 230, calc((1 - var(--clarity-level)) * 0.08)) 68%,
+                rgba(70, 52, 35, calc((1 - var(--light-level)) * 0.34)) 100%
+            );
+            transition: background 0.5s linear;
+        }
+
+        .bottom-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            /* Calcular altura: cross-section es 64% de scene-frame, así que necesitamos 100% / 0.64 = 156.25% */
+            height: calc(100% / 0.64);
+            /* Mover hacia arriba para alinear con top-scene: 36% del total = 56.25% del cross-section */
+            transform: translateY(calc(-33%));
+            object-fit: cover;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+
+        .ground {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 17%;
+            background: linear-gradient(180deg, var(--bed-top-color) 0%, var(--bed-mid-color) 35%, var(--bed-bottom-color) 100%);
+            z-index: 5;
+            transition: background 0.5s linear;
+        }
+
+        .light-rays {
+            position: absolute;
+            inset: 0;
+            height: 100%;
+            z-index: 14;
+            overflow: hidden;
+            pointer-events: none;
+            opacity: 1;
+        }
+
+        .light-ray {
+            position: absolute;
+            top: 0%;
+            height: 118%;
+            width: var(--ray-width, 12%);
+            left: var(--ray-left, 50%);
+            transform: translateX(0) rotate(var(--ray-angle, -10deg));
+            transform-origin: top center;
+            background: linear-gradient(
+                90deg,
+                rgba(var(--ray-edge-rgb-local, var(--ray-edge-rgb)), 0) 0%,
+                rgba(var(--ray-edge-rgb-local, var(--ray-edge-rgb)), 0.08) 18%,
+                rgba(var(--ray-core-rgb-local, var(--ray-core-rgb)), 0.40) 50%,
+                rgba(var(--ray-edge-rgb-local, var(--ray-edge-rgb)), 0.08) 82%,
+                rgba(var(--ray-edge-rgb-local, var(--ray-edge-rgb)), 0) 100%
+            ),
+            linear-gradient(
+                180deg,
+                rgba(var(--ray-core-rgb-local, var(--ray-core-rgb)), 0.2) 0%,
+                rgba(var(--ray-core-rgb-local, var(--ray-core-rgb)), 0.09) 10%,
+                rgba(var(--ray-edge-rgb-local, var(--ray-edge-rgb)), 0.08) 30%,
+                rgba(var(--ray-edge-rgb-local, var(--ray-edge-rgb)), 0) 50%
+            );
+            mix-blend-mode: screen;
+            animation:
+                ray-sway var(--ray-speed, 11s) ease-in-out infinite,
+                ray-fade var(--ray-fade-speed, 6s) ease-in-out infinite;
+            animation-delay: var(--ray-delay, 0s), var(--ray-fade-delay, 0s);
+            will-change: transform, opacity;
+            opacity: 0;
+        }
+
+        @keyframes ray-sway {
+            0% { transform: translateX(-16px) rotate(calc(var(--ray-angle, -10deg) - 2deg)); }
+            35% { transform: translateX(10px) rotate(calc(var(--ray-angle, -10deg) + 1.5deg)); }
+            70% { transform: translateX(-4px) rotate(calc(var(--ray-angle, -10deg) - 1deg)); }
+            100% { transform: translateX(-16px) rotate(calc(var(--ray-angle, -10deg) - 2deg)); }
+        }
+
+        @keyframes ray-fade {
+            0%, 100% { opacity: 0; }
+            15% { opacity: calc(var(--ray-peak-opacity, 0.8) * 0.25); }
+            40% { opacity: var(--ray-peak-opacity, 0.8); }
+            65% { opacity: calc(var(--ray-peak-opacity, 0.8) * 0.35); }
+        }
+
+        .bubble {
+            position: absolute;
+            z-index: 26;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.2));
+            opacity: 0.6;
+            animation: rise linear infinite;
+        }
+
+        @keyframes rise {
+            0% { transform: translateY(0) translateX(0) scale(1); opacity: 0; }
+            15% { opacity: 0.65; }
+            100% { transform: translateY(-600px) translateX(var(--drift)) scale(0.55); opacity: 0; }
+        }
+
+        .fish {
+            position: absolute;
+            width: 72px;
+            height: 40px;
+            filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.35));
+            transition: transform 0.24s ease;
+            z-index: 26;
+        }
+
+        .fish.spawning {
+            animation: fish-spawn 1s ease-out forwards;
+        }
+
+        @keyframes fish-spawn {
+            0% {
+                opacity: 0;
+                transform: translateY(20px) scale(0.5) scaleX(calc(var(--fish-direction, 1) * 0.5));
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0) scale(1) scaleX(var(--fish-direction, 1));
+            }
+        }
+
+        .fish.dying {
+            animation: fish-death 2s ease-out forwards;
+            pointer-events: none;
+        }
+
+        @keyframes fish-death {
+            0% {
+                opacity: 1;
+                transform: translateY(0) rotate(0deg) scaleX(var(--fish-direction, 1));
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(-150px) rotate(180deg) scaleX(var(--fish-direction, 1));
+            }
+        }
+
+        .fish img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .animal-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 38%;
+            z-index: 94;
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        .animal-sprite {
+            position: absolute;
+            width: var(--animal-size, 54px);
+            height: auto;
+            object-fit: contain;
+            transform: translate(-50%, -50%) scaleX(var(--animal-flip, 1)) scale(var(--animal-scale, 1));
+            transform-origin: center;
+            filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.28));
+            opacity: 0.95;
+        }
+
+        .fish.dead {
+            opacity: 0.68;
+            filter: grayscale(1) brightness(0.75) contrast(0.9) drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4));
+            animation: dead-float 7s ease-in-out infinite;
+        }
+
+        @keyframes dead-float {
+            0%, 100% { transform: translateY(0) rotate(165deg); }
+            50% { transform: translateY(-8px) rotate(169deg); }
+        }
+
+        .plant {
+            position: absolute;
+            z-index: 26;
+            bottom: 12%;
+            width: 10px;
+            border-radius: 45% 55% 50% 50%;
+            transform-origin: bottom center;
+            animation: sway 3.2s ease-in-out infinite;
+            background: linear-gradient(180deg, #58a34f 0%, #2c6f3d 100%);
+            box-shadow: 0 0 10px rgba(82, 160, 91, 0.35);
+        }
+
+        .rock {
+            position: absolute;
+            z-index: 26;
+            background: linear-gradient(135deg, #6f6f6f, #3c3c3c);
+            border-radius: 40% 60% 55% 45%;
+            box-shadow: inset -4px -4px 8px rgba(0, 0, 0, 0.35), 0 4px 8px rgba(0, 0, 0, 0.4);
+        }
+
+        .algae {
+            position: absolute;
+            z-index: 26;
+            width: 28px;
+            height: 7px;
+            background: #3f753f;
+            border-radius: 50%;
+            opacity: 0.65;
+            filter: blur(0.7px);
+            animation: float ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-12px) rotate(4deg); }
+        }
+
+        @keyframes sway {
+            0%, 100% { transform: rotate(-5deg); }
+            50% { transform: rotate(5deg); }
+        }
+
+        .controls-panel {
+            min-height: 0;
+            border-radius: 10px;
+            border: 1px solid #5e7aaa;
+            background: var(--panel-bg);
+            padding: 8px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 7px;
+            overflow: hidden;
+        }
+
+        .block {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 7px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            overflow: hidden;
+        }
+
+        .block h3 {
+            font-size: 12px;
+            color: #24497f;
+            margin-bottom: 2px;
+        }
+
+        .control-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 6px;
+            align-items: center;
+            font-size: 10px;
+        }
+
+        .control-row span.value {
+            font-size: 10px;
+            font-weight: 600;
+            color: #24497f;
+            min-width: 36px;
+            text-align: right;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 5px;
+            appearance: none;
+            border-radius: 10px;
+            background: linear-gradient(90deg, #8bb7ea, #2a66ad);
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #fff;
+            border: 2px solid #2c5ea8;
+            cursor: pointer;
+        }
+
+        .checks-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px 6px;
+            font-size: 10px;
+        }
+
+        .choice-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            font-size: 10px;
+        }
+
+        .choice-row label,
+        .checks-grid label {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        select {
+            width: 100%;
+            font-size: 10px;
+            padding: 3px 4px;
+            border-radius: 5px;
+            border: 1px solid #b9c8e0;
+            color: #1e3761;
+            background: #fdfefe;
+        }
+
+        .hint {
+            font-size: 9px;
+            color: #6c7ea0;
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <section class="metrics-panel" id="metricsPanel">
+            <div class="metric-card"><div class="metric-label">pH</div><div class="metric-value" id="metric-ph">7.0</div></div>
+            <div class="metric-card"><div class="metric-label">Oxígeno disuelto (mg/L)</div><div class="metric-value" id="metric-od">7.0</div></div>
+            <div class="metric-card"><div class="metric-label">DBO (mg/L)</div><div class="metric-value" id="metric-dbo">10.0</div></div>
+            <div class="metric-card"><div class="metric-label">Turbidez (NTU)</div><div class="metric-value" id="metric-turbidez">70</div></div>
+            <div class="metric-card"><div class="metric-label">Nitratos (mg/L)</div><div class="metric-value" id="metric-nitratos">15.0</div></div>
+            <div class="metric-card"><div class="metric-label">Fosfatos (mg/L)</div><div class="metric-value" id="metric-fosfatos">2.0</div></div>
+            <div class="metric-card"><div class="metric-label">Conductividad (µS/cm)</div><div class="metric-value" id="metric-conductividad">420</div></div>
+            <div class="metric-card"><div class="metric-label">Indice de calidad global (0-100)</div><div class="metric-value" id="metric-icg">50</div></div>
+            <!-- metricas extra para visualizacion 
+            <div class="metric-card"><div class="metric-label">Carga contaminante (0-100)</div><div class="metric-value" id="metric-load">50</div></div>
+            <div class="metric-card"><div class="metric-label">Color del agua</div><div class="metric-value" id="metric-color">intermedia</div></div>
+            <div class="metric-card"><div class="metric-label">Peces</div><div class="metric-value" id="metric-fish">3</div></div>
+            <div class="metric-card"><div class="metric-label">Algas flotando</div><div class="metric-value" id="metric-algae">8</div></div>
+            <div class="metric-card"><div class="metric-label">Plantas fondo</div><div class="metric-value" id="metric-plants">12</div></div>
+            <div class="metric-card"><div class="metric-label">Burbujas</div><div class="metric-value" id="metric-bubbles">20</div></div>
+                -->
+        </section>
+
+        <section class="content">
+            <div class="scene-frame">
+                <div class="scene-title">Simulación del río en tiempo real</div>
+                <div class="top-scene">
+                 
+                </div>
+                <div class="cross-section">
+                    <!-- SVG con clip-path para las ondulaciones -->
+                    <svg width="0" height="0" style="position: absolute;">
+                        <defs>
+                            <clipPath id="wave-clip" clipPathUnits="objectBoundingBox">
+                                <path d="M 0,0.05 
+                                         Q 0.1,0.02 0.2,0.05 
+                                         T 0.4,0.05 
+                                         T 0.6,0.05 
+                                         T 0.8,0.05 
+                                         T 1,0.05 
+                                         L 1,1 L 0,1 Z">
+                                    <animate attributeName="d" 
+                                             dur="8s" 
+                                             repeatCount="indefinite"
+                                             values="
+                                                M 0,0.05 Q 0.1,0.02 0.2,0.05 T 0.4,0.05 T 0.6,0.05 T 0.8,0.05 T 1,0.05 L 1,1 L 0,1 Z;
+                                                M 0,0.04 Q 0.1,0.06 0.2,0.04 T 0.4,0.04 T 0.6,0.04 T 0.8,0.04 T 1,0.04 L 1,1 L 0,1 Z;
+                                                M 0,0.06 Q 0.1,0.03 0.2,0.06 T 0.4,0.06 T 0.6,0.06 T 0.8,0.06 T 1,0.06 L 1,1 L 0,1 Z;
+                                                M 0,0.05 Q 0.1,0.02 0.2,0.05 T 0.4,0.05 T 0.6,0.05 T 0.8,0.05 T 1,0.05 L 1,1 L 0,1 Z"/>
+                                </path>
+                            </clipPath>
+                        </defs>
+                 
+                    </svg>
+                    
+                    <div class="river-container" id="river">
+
+                        
+                        <div class="ground"></div>
+                        <div class="light-rays"></div>
+                        <img class="bottom-overlay" src="assets/visual/background/bottom.webp" alt="" onerror="this.style.display='none'">
+                    </div>
+                </div>
+                <img class="collision-overlay" id="collisionOverlay" src="assets/collision-map.png" alt="Mapa de colisión" onerror="this.style.display='none'" style="display:none">
+                <div class="scene-overlays" aria-hidden="true">
+                    <img class="scene-overlay" src="assets/visual/background/background.webp" alt="" onerror="this.style.display='none'">
+                    <img class="scene-overlay plants" src="assets/visual/background/background_plants.webp" alt="" onerror="this.style.display='none'">
+                    <img class="water-overlay" src="assets/visual/background/water.webp" alt="" onerror="this.style.display='none'">
+
+                </div>
+                <div class="animal-layer" id="animalLayer" aria-hidden="true"></div>
+                <img class="treatment-overlay" id="treatmentOverlay" src="assets/visual/structures/treatment.webp" alt="" aria-hidden="true" onerror="this.style.display='none'">
+            </div>
+
+            <aside class="controls-panel" id="controlsPanel">
+                <div class="block">
+                    <h3>Consumo de agua diario</h3>
+                    <div class="control-row"><label>Número de casas</label><span class="value" data-out="numCasas">10</span></div>
+                    <input type="range" id="numCasas" min="1" max="500" value="10">
+                    <div class="control-row"><label>Tiempo ducha diaria (minutos)</label><span class="value" data-out="ducha">10</span></div>
+                    <input type="range" id="ducha" min="5" max="40" value="10">
+                    <div class="control-row"><label>Descargas de inodoro (por día)</label><span class="value" data-out="inodoro">4</span></div>
+                    <input type="range" id="inodoro" min="1" max="10" value="4">
+                    <div class="control-row"><label>Lavado de manos (por día)</label><span class="value" data-out="manos">4</span></div>
+                    <input type="range" id="manos" min="1" max="10" value="4">
+                    <div class="control-row"><label>Lavado de loza (por día)</label><span class="value" data-out="loza">2</span></div>
+                    <input type="range" id="loza" min="1" max="6" value="2">
+                    <div class="control-row"><label>Lavadora de ropa (semana)</label><span class="value" data-out="lavadora">2</span></div>
+                    <input type="range" id="lavadora" min="1" max="7" value="2">
+                    <div class="choice-row">
+                        <label><input type="radio" name="dientes" value="abierta" checked> Cepillado: llave abierta</label>
+                        <label><input type="radio" name="dientes" value="cerrada"> Llave cerrada</label>
+                    </div>
+                    <label class="choice-row"><input type="checkbox" id="riego"> Riego de jardín</label>
+                </div>
+
+                <div class="block">
+                    <h3>Detergentes y saneamiento</h3>
+                    <div class="checks-grid">
+                        <label><input type="checkbox" id="det-ropa" checked> Detergente de ropa</label>
+                        <label><input type="checkbox" id="lavaloza" checked> Lavaloza</label>
+                        <label><input type="checkbox" id="cloro" checked> Lejía/cloro</label>
+                        <label><input type="checkbox" id="desinfectante" checked> Desinfectante</label>
+                        <label><input type="checkbox" id="shampoo" checked> Shampoo/jabón</label>
+                        <label><input type="checkbox" id="suavizante"> Suavizante</label>
+                    </div>
+                    <select id="tratamiento">
+                        <option value="planta">Planta de tratamiento</option>
+                        <option value="pozo">Pozo séptico</option>
+                        <option value="descarga">Descarga directa</option>
+                    </select>
+                    <div class="hint">El tipo de saneamiento cambia el aporte final de contaminantes.</div>
+                </div>
+
+                <div class="block">
+                    <h3>Agropecuario</h3>
+                    <select id="fertilizantes">
+                        <option value="0">Uso de fertilizantes: no uso</option>
+                        <option value="1">Uso de fertilizantes: hasta 200kg/ha</option>
+                        <option value="2">Uso de fertilizantes: hasta 500kg/ha</option>
+                        <option value="3">Uso de fertilizantes: hasta 800kg/ha</option>
+                    </select>
+                    <div class="control-row"><label>Pollos</label></div>
+                    <input type="range" id="pollos" min="0" max="200" value="20">
+                    <div class="control-row"><label>Ovejas</label></div>
+                    <input type="range" id="ovejas" min="0" max="200" value="10">
+                    <div class="control-row"><label>Vacas</label></div>
+                    <input type="range" id="vacas" min="0" max="200" value="5">
+                    <div class="control-row"><label>Cerdos</label></div>
+                    <input type="range" id="cerdos" min="0" max="200" value="8">
+                </div>
+
+                <div class="block">
+                    <h3>Residuos</h3>
+                    <label class="choice-row"><input type="checkbox" id="separacion" checked> Separación adecuada</label>
+                    <label class="choice-row"><input type="checkbox" id="botadero"> Botadero cercano</label>
+                    <label class="choice-row"><input type="checkbox" id="quema"> Quema de residuos</label>
+                    <div class="hint">La combinación de residuos impacta turbidez, DBO y nutrientes.</div>
+                </div>
+            </aside>
+        </section>
+    </div>
+    <script src="water_quality_model.js"></script>
+    <script src="simulador_agua_app.js"></script>
+</body>
+</html>
+
+
+

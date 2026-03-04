@@ -1,0 +1,801 @@
+const sceneFrame = document.querySelector(".scene-frame");
+const river = document.getElementById("river");
+const lightRaysLayer = river.querySelector(".light-rays");
+const animalLayer = document.getElementById("animalLayer");
+const treatmentOverlay = document.getElementById("treatmentOverlay");
+const model = window.WATER_QUALITY_MODEL;
+
+if (!model) {
+    throw new Error("No se encontro WATER_QUALITY_MODEL. Carga water_quality_model.js antes de este script.");
+}
+
+const fishSpriteMap = {
+    tilapia: "assets/visual/fish/fish_1.webp",
+    bagre: "assets/visual/fish/fish_2.webp",
+    trucha: "assets/visual/fish/fish_3.webp"
+};
+const livestockSpriteMap = {
+    vacas: "assets/visual/animals/cow.webp",
+    cerdos: "assets/visual/animals/pig.webp",
+    pollos: "assets/visual/animals/chicken.webp",
+    ovejas: "assets/visual/animals/sheep.webp"
+};
+const livestockZones = {
+    vacas: { xMin: 3, xMax: 16, yMin: 46, yMax: 66, baseSize: 20, sizeJitter: 10 },
+    cerdos: { xMin: 3, xMax: 16, yMin: 46, yMax: 66, baseSize: 12, sizeJitter: 10 },
+    pollos: { xMin: 3, xMax: 16, yMin: 46, yMax: 66, baseSize: 8, sizeJitter: 10 },
+    ovejas: { xMin: 3, xMax: 16, yMin: 46, yMax: 66, baseSize: 4, sizeJitter: 10 }
+};
+const livestockControls = ["pollos", "ovejas", "vacas", "cerdos"];
+const fishSpecies = ["tilapia", "bagre", "trucha"];
+const treatmentOverlayMap = {
+    planta: "assets/visual/structures/treatment.webp",
+    pozo: "assets/visual/structures/septic.webp",
+    descarga: "assets/visual/structures/direct.webp"
+};
+let aliveFishes = [];
+let deadFishes = [];
+let bubbles = [];
+let plants = [];
+let algaeElements = [];
+const livestockSprites = {
+    pollos: [],
+    ovejas: [],
+    vacas: [],
+    cerdos: []
+};
+
+const collisionCanvas = document.createElement("canvas");
+const collisionContext = collisionCanvas.getContext("2d", { willReadFrequently: true });
+const collisionImage = new Image();
+let collisionMap = null;
+let collisionImageLoaded = false;
+
+const waterStops = model.waterStops;
+const maxTotalFish = model.parameters?.visual?.fishMaxTotal ?? 20;
+const maxLightRaysOnScene = 6;
+let activeLightRays = [];
+let pendingLightRayProfile = {
+    coreRgb: "232, 246, 255",
+    edgeRgb: "160, 210, 232",
+    peakOpacity: 0.62,
+    swayMin: 8.5,
+    swayMax: 13.5,
+    fadeMin: 4.6,
+    fadeMax: 7.2
+};
+
+class FishEntity {
+    constructor({ species, dead = false }) {
+        this.species = species;
+        this.dead = dead;
+        this.isDying = false;
+        this.element = document.createElement("div");
+        this.element.className = dead ? "fish dead" : "fish spawning";
+
+        this.img = document.createElement("img");
+        this.img.src = fishSpriteMap[species] || fishSpriteMap.bagre;
+        this.element.appendChild(this.img);
+
+        this.width = 72;
+        this.height = 40;
+
+        if (dead) {
+            this.findDeadStartPosition();
+            this.speedX = 0;
+            this.speedY = 0;
+            this.direction = Math.random() < 0.5 ? -1 : 1;
+        } else {
+            this.findValidStartPosition();
+            this.speedX = (Math.random() - 0.5) * 2.2;
+            if (Math.abs(this.speedX) < 0.5) this.speedX = this.speedX < 0 ? -0.5 : 0.5;
+            this.speedY = (Math.random() - 0.5) * 0.8;
+            this.direction = this.speedX > 0 ? 1 : -1;
+        }
+
+        this.updateElement();
+        river.appendChild(this.element);
+
+        if (!dead) {
+            this.isSpawning = true;
+            setTimeout(() => {
+                this.isSpawning = false;
+                this.element.classList.remove("spawning");
+            }, 1000);
+        } else {
+            this.isSpawning = false;
+        }
+    }
+
+    findValidStartPosition() {
+        const validPosition = findRandomValidFishPosition(this.width, this.height, this.species);
+        if (validPosition) {
+            this.x = validPosition.x;
+            this.y = validPosition.y;
+            return;
+        }
+
+        const limits = getFishVerticalLimits(this.species);
+        this.x = river.offsetWidth * 0.45;
+        this.y = limits.minY + (limits.maxY - limits.minY) * 0.5;
+    }
+
+    findDeadStartPosition() {
+        const minY = river.offsetHeight * 0.12;
+        const maxY = river.offsetHeight * 0.3;
+        this.x = Math.random() * Math.max(1, river.offsetWidth - this.width);
+        this.y = minY + Math.random() * Math.max(1, maxY - minY);
+    }
+
+    recoverFromInvalidPosition() {
+        if (this.dead) return;
+        const validPosition = findRandomValidFishPosition(this.width, this.height, this.species);
+        if (validPosition) {
+            this.x = validPosition.x;
+            this.y = validPosition.y;
+            this.speedX *= -1;
+            this.speedY *= -1;
+            this.direction = this.speedX > 0 ? 1 : -1;
+        }
+    }
+
+    updateElement() {
+        this.element.style.left = `${this.x}px`;
+        this.element.style.top = `${this.y}px`;
+        this.element.style.setProperty("--fish-direction", this.direction);
+        if (!this.dead && !this.isSpawning) {
+            this.element.style.transform = `scaleX(${this.direction})`;
+        } else if (this.dead) {
+            this.element.style.transform = `rotate(165deg) scaleX(${this.direction})`;
+        }
+    }
+
+    update() {
+        if (this.dead || this.isDying) return;
+
+        if (!canFishMoveTo(this.x, this.y, this.width, this.height, this.species)) {
+            this.recoverFromInvalidPosition();
+        }
+
+        const nextX = this.x + this.speedX;
+        const nextY = this.y + this.speedY;
+
+        if (!canFishMoveTo(nextX, this.y, this.width, this.height, this.species)) {
+            this.speedX *= -1;
+            this.direction *= -1;
+            this.x += this.speedX;
+        } else {
+            this.x = nextX;
+        }
+
+        if (!canFishMoveTo(this.x, nextY, this.width, this.height, this.species)) {
+            this.speedY *= -1;
+            this.y += this.speedY;
+        } else {
+            this.y = nextY;
+        }
+
+        if (!canFishMoveTo(this.x, this.y, this.width, this.height, this.species)) {
+            this.recoverFromInvalidPosition();
+        }
+
+        if (Math.random() < 0.02) {
+            this.speedY += (Math.random() - 0.5) * 0.18;
+            this.speedY = Math.max(-0.8, Math.min(0.8, this.speedY));
+        }
+
+        if (Math.random() < 0.01) {
+            this.speedX += (Math.random() - 0.5) * 0.25;
+            this.speedX = Math.max(-2.2, Math.min(2.2, this.speedX));
+            if (Math.abs(this.speedX) < 0.4) this.speedX = this.speedX < 0 ? -0.4 : 0.4;
+            if (this.speedX > 0 && this.direction < 0) this.direction = 1;
+            if (this.speedX < 0 && this.direction > 0) this.direction = -1;
+        }
+
+        this.updateElement();
+    }
+
+    startDying() {
+        if (this.dead || this.isDying) return;
+        this.isDying = true;
+        this.element.classList.remove("spawning");
+        this.element.classList.add("dying");
+        setTimeout(() => this.remove(), 2000);
+    }
+
+    remove() {
+        this.element.remove();
+    }
+}
+
+function syncFishPool(pool, targetBySpecies, dead) {
+    fishSpecies.forEach((species) => {
+        const targetCount = Math.max(0, Math.round(Number(targetBySpecies?.[species] ?? 0)));
+        let speciesFishes = pool.filter((fish) => fish.species === species);
+
+        while (speciesFishes.length < targetCount) {
+            const entity = new FishEntity({ species, dead });
+            pool.push(entity);
+            speciesFishes.push(entity);
+        }
+
+        while (speciesFishes.length > targetCount) {
+            const entity = speciesFishes.pop();
+            if (!entity) break;
+            const index = pool.indexOf(entity);
+            if (index >= 0) pool.splice(index, 1);
+            if (dead) {
+                entity.remove();
+            } else {
+                entity.startDying();
+            }
+        }
+    });
+
+    return pool;
+}
+
+function setFishPopulation(visual) {
+    const fishAlive = visual?.fishAlive ?? { tilapia: 0, bagre: 0, trucha: 0 };
+    const fishDead = visual?.fishDead ?? { tilapia: 0, bagre: 0, trucha: 0 };
+
+    const aliveTargetTotal = fishSpecies.reduce((acc, species) => acc + Math.max(0, Number(fishAlive[species] ?? 0)), 0);
+    const capRatio = aliveTargetTotal > maxTotalFish ? maxTotalFish / aliveTargetTotal : 1;
+    const cappedAlive = {};
+    fishSpecies.forEach((species) => {
+        cappedAlive[species] = Math.round(Math.max(0, Number(fishAlive[species] ?? 0)) * capRatio);
+    });
+
+    aliveFishes = syncFishPool(aliveFishes, cappedAlive, false);
+    deadFishes = syncFishPool(deadFishes, fishDead, true);
+
+    aliveFishes = aliveFishes.filter((fish) => document.body.contains(fish.element));
+    deadFishes = deadFishes.filter((fish) => document.body.contains(fish.element));
+}
+
+function animateFishes() {
+    aliveFishes.forEach((fish) => fish.update());
+    deadFishes.forEach((fish) => fish.update());
+    requestAnimationFrame(animateFishes);
+}
+
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function map(value, inMin, inMax, outMin, outMax) {
+    const normalized = (value - inMin) / (inMax - inMin);
+    return outMin + normalized * (outMax - outMin);
+}
+
+function lerp(start, end, t) {
+    return start + (end - start) * t;
+}
+
+function mixRgb(from, to, t) {
+    const mix = clamp(t, 0, 1);
+    const r = Math.round(lerp(from[0], to[0], mix));
+    const g = Math.round(lerp(from[1], to[1], mix));
+    const b = Math.round(lerp(from[2], to[2], mix));
+    return `rgb(${r}, ${g}, ${b})`;
+}
+
+function sliderRatio(controlId, rawValue) {
+    const input = document.getElementById(controlId);
+    const min = input ? Number(input.min) : 0;
+    const max = input ? Number(input.max) : 100;
+    const value = Number.isFinite(Number(rawValue)) ? Number(rawValue) : min;
+    if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return 0;
+    return clamp((value - min) / (max - min), 0, 1);
+}
+
+function livestockCountFromRatio(ratio) {
+    if (ratio <= 0) return 0;
+    if (ratio < 0.3) return 1;
+    if (ratio < 0.7) return 2;
+    return 3;
+}
+
+function randomInRange(min, max) {
+    return min + Math.random() * (max - min);
+}
+
+function createLivestockSprite(species) {
+    const zone = livestockZones[species] ?? livestockZones.vacas;
+    const sprite = document.createElement("img");
+    sprite.className = `animal-sprite animal-${species}`;
+    sprite.src = livestockSpriteMap[species];
+    sprite.alt = "";
+    sprite.style.left = `${randomInRange(zone.xMin, zone.xMax).toFixed(2)}%`;
+    sprite.style.top = `${randomInRange(zone.yMin, zone.yMax).toFixed(2)}%`;
+    sprite.style.setProperty("--animal-size", `${zone.baseSize + Math.random() * zone.sizeJitter}px`);
+    sprite.style.setProperty("--animal-scale", `${(0.92 + Math.random() * 0.02).toFixed(2)}`);
+    sprite.style.setProperty("--animal-flip", Math.random() < 0.5 ? "-1" : "1");
+    sprite.onerror = () => {
+        sprite.style.display = "none";
+    };
+    return sprite;
+}
+
+function syncLivestockPool(species, targetCount) {
+    if (!animalLayer) return;
+    const pool = livestockSprites[species];
+    if (!pool) return;
+
+    while (pool.length < targetCount) {
+        const sprite = createLivestockSprite(species);
+        pool.push(sprite);
+        animalLayer.appendChild(sprite);
+    }
+
+    while (pool.length > targetCount) {
+        const sprite = pool.pop();
+        if (sprite) sprite.remove();
+    }
+}
+
+function updateLivestockSprites(state) {
+    if (!animalLayer) return;
+    livestockControls.forEach((species) => {
+        const ratio = sliderRatio(species, state[species]);
+        const targetCount = livestockCountFromRatio(ratio);
+        syncLivestockPool(species, targetCount);
+    });
+}
+
+function initializeLightRays() {
+    if (!lightRaysLayer || activeLightRays.length > 0) return;
+    for (let i = 0; i < maxLightRaysOnScene; i += 1) {
+        spawnLightRay(pendingLightRayProfile, i * 250);
+    }
+}
+
+function cleanupLightRays() {
+    activeLightRays = activeLightRays.filter((entry) => entry.node && entry.node.isConnected);
+}
+
+function buildLightRayProfile(metrics, visual) {
+    const luz = clamp(Number(visual?.luz ?? model.internalState?.luz ?? 1), 0, 1);
+    const turbidityNorm = clamp(map(metrics.turbidez, 5, 250, 0, 1), 0, 1);
+    const clarity = clamp(1 - turbidityNorm, 0, 1);
+    const lightStrength = clamp(0.2 + luz * 0.8, 0, 1);
+    const qualityLabel = visual?.qualityLabel || "intermedia";
+
+    let coreRgb = "232, 246, 255";
+    let edgeRgb = "160, 210, 232";
+    if (qualityLabel === "intermedia") {
+        coreRgb = "221, 238, 222";
+        edgeRgb = "152, 188, 162";
+    } else if (qualityLabel === "turbia") {
+        coreRgb = "214, 206, 168";
+        edgeRgb = "144, 128, 90";
+    }
+
+    return {
+        coreRgb,
+        edgeRgb,
+        peakOpacity: clamp(0.2 + lightStrength * 0.65 * (0.55 + clarity * 0.45), 0.16, 0.9),
+        swayMin: clamp(8.3 + (1 - lightStrength) * 2.0, 7.8, 11.5),
+        swayMax: clamp(13.8 + (1 - lightStrength) * 2.2, 12.6, 16.6),
+        fadeMin: clamp(4.4 + (1 - clarity) * 0.8, 4.2, 5.8),
+        fadeMax: clamp(7 + (1 - clarity) * 1.4, 6.5, 8.8)
+    };
+}
+
+function spawnLightRay(profile, delayMs = 0) {
+    if (!lightRaysLayer) return;
+    cleanupLightRays();
+    if (activeLightRays.length >= maxLightRaysOnScene) return;
+
+    const create = () => {
+        cleanupLightRays();
+        if (activeLightRays.length >= maxLightRaysOnScene) return;
+
+        const ray = document.createElement("div");
+        ray.className = "light-ray";
+        ray.style.setProperty("--ray-left", `${6 + Math.random() * 88}%`);
+        ray.style.setProperty("--ray-width", `${6 + Math.random() * 9}%`);
+        ray.style.setProperty("--ray-angle", `${-17 + Math.random() * 14}deg`);
+        ray.style.setProperty("--ray-speed", `${(profile.swayMin + Math.random() * (profile.swayMax - profile.swayMin)).toFixed(2)}s`);
+        ray.style.setProperty("--ray-fade-speed", `${(profile.fadeMin + Math.random() * (profile.fadeMax - profile.fadeMin)).toFixed(2)}s`);
+        ray.style.setProperty("--ray-delay", `${(Math.random() * 1.4).toFixed(2)}s`);
+        ray.style.setProperty("--ray-fade-delay", `${(Math.random() * 1.8).toFixed(2)}s`);
+        ray.style.setProperty("--ray-core-rgb-local", profile.coreRgb);
+        ray.style.setProperty("--ray-edge-rgb-local", profile.edgeRgb);
+        ray.style.setProperty("--ray-peak-opacity", profile.peakOpacity.toFixed(3));
+        lightRaysLayer.appendChild(ray);
+
+        const lifespanMs = 10000 + Math.random() * 7000;
+        const entry = { node: ray };
+        activeLightRays.push(entry);
+
+        setTimeout(() => {
+            ray.remove();
+            cleanupLightRays();
+            spawnLightRay(pendingLightRayProfile);
+        }, lifespanMs);
+    };
+
+    if (delayMs > 0) {
+        setTimeout(create, delayMs);
+    } else {
+        create();
+    }
+}
+
+function applyLightToScene(metrics, visual) {
+    const luz = clamp(Number(visual?.luz ?? model.internalState?.luz ?? 1), 0, 1);
+    const turbidityNorm = clamp(map(metrics.turbidez, 5, 250, 0, 1), 0, 1);
+    const clarity = clamp(1 - turbidityNorm, 0, 1);
+    const lightStrength = clamp(0.2 + luz * 0.8, 0, 1);
+    const bedLift = clamp(0.18 + clarity * 0.55 + luz * 0.27, 0, 1);
+
+    const bedTop = mixRgb([58, 43, 31], [125, 104, 80], bedLift);
+    const bedMid = mixRgb([44, 32, 24], [96, 74, 55], bedLift);
+    const bedBottom = mixRgb([27, 17, 12], [68, 49, 35], bedLift * 0.9);
+
+    document.documentElement.style.setProperty("--light-level", lightStrength.toFixed(3));
+    document.documentElement.style.setProperty("--clarity-level", clarity.toFixed(3));
+    document.documentElement.style.setProperty("--bed-top-color", bedTop);
+    document.documentElement.style.setProperty("--bed-mid-color", bedMid);
+    document.documentElement.style.setProperty("--bed-bottom-color", bedBottom);
+
+    pendingLightRayProfile = buildLightRayProfile(metrics, visual);
+}
+
+function syncVisualElements(collection, targetCount, factory) {
+    while (collection.length < targetCount) {
+        const node = factory();
+        collection.push(node);
+        river.appendChild(node);
+    }
+
+    while (collection.length > targetCount) {
+        const node = collection.pop();
+        if (node) node.remove();
+    }
+}
+
+function createBubbleElement() {
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    const size = Math.random() * 14 + 5;
+    bubble.style.width = `${size}px`;
+    bubble.style.height = `${size}px`;
+    bubble.style.left = `${Math.random() * 100}%`;
+    bubble.style.bottom = `${Math.random() * -120}px`;
+    bubble.style.setProperty("--drift", `${(Math.random() - 0.5) * 95}px`);
+    bubble.style.animationDuration = `${Math.random() * 9 + 6}s`;
+    bubble.style.animationDelay = `${Math.random() * 4}s`;
+    return bubble;
+}
+
+function createPlantElement() {
+    const plant = document.createElement("div");
+    plant.className = "plant";
+    plant.style.height = `${Math.random() * 100 + 60}px`;
+    plant.style.left = `${Math.random() * 100}%`;
+    plant.style.animationDuration = `${Math.random() * 3 + 2}s`;
+    return plant;
+}
+
+function createAlgaeElement() {
+    const algae = document.createElement("div");
+    algae.className = "algae";
+    algae.style.left = `${Math.random() * 100}%`;
+    algae.style.top = `${Math.random() * 46 + 20}%`;
+    algae.style.animationDuration = `${Math.random() * 3 + 3}s`;
+    return algae;
+}
+
+function setBubbleCount(count) {
+    syncVisualElements(bubbles, count, createBubbleElement);
+}
+
+function setPlantCount(count) {
+    syncVisualElements(plants, count, createPlantElement);
+}
+
+function setAlgaeCount(count) {
+    syncVisualElements(algaeElements, count, createAlgaeElement);
+}
+
+function createRocks() {
+    for (let i = 0; i < 8; i += 1) {
+        const rock = document.createElement("div");
+        rock.className = "rock";
+        const size = Math.random() * 70 + 35;
+        rock.style.width = `${size}px`;
+        rock.style.height = `${size * 0.68}px`;
+        rock.style.left = `${Math.random() * 100}%`;
+        rock.style.bottom = `${Math.random() * 8}px`;
+        river.appendChild(rock);
+    }
+}
+
+function isNavigablePixel(sceneX, sceneY) {
+    if (!collisionMap) return true;
+
+    const pixelX = Math.floor(sceneX);
+    const pixelY = Math.floor(sceneY);
+
+    if (pixelX < 0 || pixelX >= collisionCanvas.width || pixelY < 0 || pixelY >= collisionCanvas.height) {
+        return false;
+    }
+
+    const index = (pixelY * collisionCanvas.width + pixelX) * 4;
+    const r = collisionMap.data[index];
+    const g = collisionMap.data[index + 1];
+    const b = collisionMap.data[index + 2];
+
+    return r > 200 && g > 200 && b > 200;
+}
+
+function getRiverOffsetInScene() {
+    const sceneRect = sceneFrame.getBoundingClientRect();
+    const riverRect = river.getBoundingClientRect();
+    return {
+        x: riverRect.left - sceneRect.left,
+        y: riverRect.top - sceneRect.top
+    };
+}
+
+function getFishVerticalLimits(species) {
+    const globalMin = river.offsetHeight * 0.11;
+    const globalMax = river.offsetHeight * 0.8;
+
+    if (species === "bagre") {
+        return {
+            minY: river.offsetHeight * 0.6,
+            maxY: globalMax
+        };
+    }
+
+    return { minY: globalMin, maxY: globalMax };
+}
+
+function canFishMoveTo(newX, newY, width, height, species = "tilapia") {
+    const limits = getFishVerticalLimits(species);
+    const minY = limits.minY;
+    const maxY = limits.maxY;
+
+    if (newX < 0 || newX + width > river.offsetWidth || newY < minY || newY + height > maxY) {
+        return false;
+    }
+
+    const offset = getRiverOffsetInScene();
+    const checkpoints = [
+        { x: newX + width / 2, y: newY + height / 2 },
+        { x: newX + 10, y: newY + height / 2 },
+        { x: newX + width - 10, y: newY + height / 2 },
+        { x: newX + width / 2, y: newY + 6 },
+        { x: newX + width / 2, y: newY + height - 6 }
+    ];
+
+    return checkpoints.every((point) => isNavigablePixel(point.x + offset.x, point.y + offset.y));
+}
+
+function findRandomValidFishPosition(width, height, species = "tilapia") {
+    const limits = getFishVerticalLimits(species);
+    const minY = limits.minY;
+    const maxY = limits.maxY;
+
+    for (let attempts = 0; attempts < 320; attempts += 1) {
+        const candidateX = Math.random() * Math.max(1, river.offsetWidth - width);
+        const candidateY = minY + Math.random() * Math.max(1, maxY - minY);
+
+        if (canFishMoveTo(candidateX, candidateY, width, height, species)) {
+            return { x: candidateX, y: candidateY };
+        }
+    }
+
+    return null;
+}
+
+function refreshCollisionMap() {
+    if (!collisionImageLoaded) return;
+
+    collisionCanvas.width = sceneFrame.offsetWidth;
+    collisionCanvas.height = sceneFrame.offsetHeight;
+    collisionContext.clearRect(0, 0, collisionCanvas.width, collisionCanvas.height);
+    collisionContext.drawImage(collisionImage, 0, 0, collisionCanvas.width, collisionCanvas.height);
+    collisionMap = collisionContext.getImageData(0, 0, collisionCanvas.width, collisionCanvas.height);
+
+    aliveFishes.forEach((fish) => {
+        if (!canFishMoveTo(fish.x, fish.y, fish.width, fish.height, fish.species)) {
+            fish.recoverFromInvalidPosition();
+            fish.updateElement();
+        }
+    });
+}
+
+function mixColor(from, to, ratio) {
+    return {
+        r: Math.round(from.r + (to.r - from.r) * ratio),
+        g: Math.round(from.g + (to.g - from.g) * ratio),
+        b: Math.round(from.b + (to.b - from.b) * ratio),
+        a: Number((from.a + (to.a - from.a) * ratio).toFixed(3))
+    };
+}
+
+function toRgba(color) {
+    return `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a})`;
+}
+
+function resolveWaterColors(indiceGlobal) {
+    const boundedQuality = clamp(indiceGlobal, 0, 100);
+
+    for (let i = 0; i < waterStops.length - 1; i += 1) {
+        const start = waterStops[i];
+        const end = waterStops[i + 1];
+
+        if (boundedQuality >= start.quality && boundedQuality <= end.quality) {
+            const ratio = (boundedQuality - start.quality) / (end.quality - start.quality);
+            return {
+                light: toRgba(mixColor(start.light, end.light, ratio)),
+                mid: toRgba(mixColor(start.mid, end.mid, ratio)),
+                dark: toRgba(mixColor(start.dark, end.dark, ratio))
+            };
+        }
+    }
+
+    const fallback = waterStops[waterStops.length - 1];
+    return {
+        light: toRgba(fallback.light),
+        mid: toRgba(fallback.mid),
+        dark: toRgba(fallback.dark)
+    };
+}
+
+function getState() {
+    return {
+        numCasas: Number(document.getElementById("numCasas")?.value ?? 200),
+        ducha: Number(document.getElementById("ducha").value),
+        inodoro: Number(document.getElementById("inodoro").value),
+        manos: Number(document.getElementById("manos").value),
+        loza: Number(document.getElementById("loza").value),
+        lavadora: Number(document.getElementById("lavadora").value),
+        dientes: document.querySelector('input[name="dientes"]:checked').value,
+        riego: document.getElementById("riego").checked,
+        detergentes: ["det-ropa", "lavaloza", "cloro", "desinfectante", "shampoo", "suavizante"].reduce(
+            (acc, id) => acc + (document.getElementById(id).checked ? 1 : 0),
+            0
+        ),
+        tratamiento: document.getElementById("tratamiento").value,
+        fertilizantes: Number(document.getElementById("fertilizantes").value),
+        pollos: Number(document.getElementById("pollos").value),
+        ovejas: Number(document.getElementById("ovejas").value),
+        vacas: Number(document.getElementById("vacas").value),
+        cerdos: Number(document.getElementById("cerdos").value),
+        separacion: document.getElementById("separacion").checked,
+        botadero: document.getElementById("botadero").checked,
+        quema: document.getElementById("quema").checked
+    };
+}
+
+function computeWaterQuality(state) {
+    const helpers = { clamp, map };
+    const parameters = model.parameters;
+
+    const components = {
+        usoDomestico: model.formulas.usoDomestico(state, helpers),
+        detergentes: model.formulas.detergentes(state, parameters),
+        saneamientoFactor: model.formulas.saneamientoFactor(state, parameters),
+        agro: model.formulas.agro(state, parameters),
+        residuos: model.formulas.residuos(state, parameters)
+    };
+
+    const pollutantLoadLegacy = model.formulas.pollutantLoad(components, helpers, parameters);
+    const indiceGlobalLegacy = model.formulas.indiceGlobal(pollutantLoadLegacy, helpers);
+
+    const metricas = model.formulas.metricas(
+        state,
+        { pollutantLoad: pollutantLoadLegacy, indiceGlobal: indiceGlobalLegacy, components, parameters },
+        helpers
+    );
+
+    const pollutantLoad = Number.isFinite(Number(metricas.pollutantLoad))
+        ? Number(metricas.pollutantLoad)
+        : pollutantLoadLegacy;
+    const indiceGlobal = Number.isFinite(Number(metricas.indiceGlobal))
+        ? Number(metricas.indiceGlobal)
+        : indiceGlobalLegacy;
+
+    return {
+        ...metricas,
+        pollutantLoad,
+        indiceGlobal,
+        pollutantLoadLegacy,
+        indiceGlobalLegacy,
+        components
+    };
+}
+
+function applyWaterVisual(metrics) {
+    const colors = resolveWaterColors(metrics.indiceGlobal);
+    const visual = model.formulas.visuales(
+        metrics,
+        { indiceGlobal: metrics.indiceGlobal, parameters: model.parameters },
+        { clamp, map }
+    );
+
+    document.documentElement.style.setProperty("--water-light", colors.light);
+    document.documentElement.style.setProperty("--water-mid", colors.mid);
+    document.documentElement.style.setProperty("--water-dark", colors.dark);
+    applyLightToScene(metrics, visual);
+
+    setFishPopulation(visual);
+    setAlgaeCount(visual.algaeCount);
+    setPlantCount(visual.plantCount);
+    setBubbleCount(visual.bubbleCount);
+
+    return visual;
+}
+
+function updateOutputBadges() {
+    document.querySelectorAll("[data-out]").forEach((node) => {
+        const target = document.getElementById(node.dataset.out);
+        node.textContent = target.value;
+    });
+}
+
+function setMetricText(id, value) {
+    const node = document.getElementById(id);
+    if (node) node.textContent = value;
+}
+
+function updateTreatmentOverlay(tratamiento) {
+    if (!treatmentOverlay) return;
+    const nextSrc = treatmentOverlayMap[tratamiento] || treatmentOverlayMap.planta;
+    treatmentOverlay.style.display = "";
+    if (treatmentOverlay.dataset.currentSrc === nextSrc) return;
+    treatmentOverlay.src = nextSrc;
+    treatmentOverlay.dataset.currentSrc = nextSrc;
+}
+
+function updateSimulation() {
+    updateOutputBadges();
+    const state = getState();
+    updateTreatmentOverlay(state.tratamiento);
+    const metrics = computeWaterQuality(state);
+    const visual = applyWaterVisual(metrics);
+    updateLivestockSprites(state);
+
+    setMetricText("metric-ph", metrics.ph.toFixed(1));
+    setMetricText("metric-od", metrics.od.toFixed(1));
+    setMetricText("metric-dbo", metrics.dbo.toFixed(1));
+    setMetricText("metric-turbidez", Math.round(metrics.turbidez));
+    setMetricText("metric-nitratos", metrics.nitratos.toFixed(1));
+    setMetricText("metric-fosfatos", metrics.fosfatos.toFixed(2));
+    setMetricText("metric-conductividad", Math.round(metrics.conductividad));
+    setMetricText("metric-icg", metrics.indiceGlobal);
+    setMetricText("metric-caudal", (metrics.caudalEfectivo_Ls ?? 0).toFixed(2));
+    setMetricText("metric-load", Math.round(metrics.pollutantLoad));
+    setMetricText("metric-color", visual.qualityLabel);
+    setMetricText("metric-fish", visual.fishCount);
+    setMetricText("metric-algae", visual.algaeCount);
+    setMetricText("metric-plants", visual.plantCount);
+    setMetricText("metric-bubbles", visual.bubbleCount);
+
+}
+
+document.getElementById("controlsPanel").addEventListener("input", updateSimulation);
+document.getElementById("controlsPanel").addEventListener("change", updateSimulation);
+window.addEventListener("resize", refreshCollisionMap);
+
+collisionImage.onload = () => {
+    collisionImageLoaded = true;
+    refreshCollisionMap();
+};
+
+collisionImage.onerror = () => {
+    collisionMap = null;
+    console.warn("No se pudo cargar assets/collision-map.png. Se usara colision por limites del rio.");
+};
+
+collisionImage.src = "assets/collision-map.png";
+
+createRocks();
+animateFishes();
+updateSimulation();
+initializeLightRays();
