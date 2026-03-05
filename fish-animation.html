@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Animación de Peces</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(180deg, #4a90e2 0%, #2c5f8d 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        
+        .container {
+            width: 100%;
+            height: 100vh;
+            position: relative;
+        }
+        
+        .aquarium {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            background: linear-gradient(180deg, 
+                rgba(100, 180, 220, 0.6) 0%, 
+                rgba(60, 130, 180, 0.75) 40%, 
+                rgba(30, 70, 100, 0.9) 100%);
+            overflow: hidden;
+        }
+        
+        /* Background overlay que define los límites */
+        .background-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: url('background.webp');
+            background-size: cover;
+            background-position: center;
+            pointer-events: none;
+            z-index: 1;
+        }
+        
+        /* Canvas oculto para detección de colisiones */
+        #collisionCanvas {
+            display: none;
+        }
+        
+        /* Peces - ahora usando sprites */
+        .fish {
+            position: absolute;
+            width: 80px;
+            height: auto;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+            transition: transform 0.3s ease;
+            z-index: 0;
+        }
+        
+        .fish img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        
+        .fish.flipped {
+            transform: scaleX(-1);
+        }
+        
+        /* Controles */
+        .controls {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px 30px;
+            border-radius: 15px;
+            box-shadow: 0 5px 30px rgba(0, 0, 0, 0.3);
+            z-index: 100;
+        }
+        
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .control-group label {
+            font-weight: 600;
+            color: #2c5f8d;
+            min-width: 140px;
+            font-size: 1em;
+        }
+        
+        .slider {
+            width: 250px;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 8px;
+            background: linear-gradient(90deg, #4a90e2, #2c5f8d);
+            border-radius: 5px;
+            outline: none;
+            opacity: 0.9;
+            transition: opacity 0.2s;
+        }
+        
+        .slider:hover {
+            opacity: 1;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 25px;
+            height: 25px;
+            background: white;
+            border: 3px solid #2c5f8d;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s;
+        }
+        
+        .slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+        
+        .slider::-moz-range-thumb {
+            width: 25px;
+            height: 25px;
+            background: white;
+            border: 3px solid #2c5f8d;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s;
+        }
+        
+        .slider::-moz-range-thumb:hover {
+            transform: scale(1.2);
+        }
+        
+        .count-label {
+            min-width: 50px;
+            text-align: center;
+            font-weight: 600;
+            color: #2c5f8d;
+            font-size: 1.1em;
+        }
+        
+        h1 {
+            position: fixed;
+            top: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.6);
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <h1>Animación de Peces Realista</h1>
+    
+    <div class="container">
+        <div class="aquarium" id="aquarium">
+            <div class="background-overlay" id="backgroundOverlay"></div>
+        </div>
+        
+        <!-- Canvas oculto para detección de colisiones -->
+        <canvas id="collisionCanvas"></canvas>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="fishSlider">Número de peces:</label>
+                <input type="range" id="fishSlider" class="slider" min="1" max="30" value="10">
+                <span class="count-label" id="fishLabel">10</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const aquarium = document.getElementById('aquarium');
+        const backgroundOverlay = document.getElementById('backgroundOverlay');
+        const fishSlider = document.getElementById('fishSlider');
+        const fishLabel = document.getElementById('fishLabel');
+        const collisionCanvas = document.getElementById('collisionCanvas');
+        const ctx = collisionCanvas.getContext('2d', { willReadFrequently: true });
+        
+        // Sistema de peces con movimiento realista
+        let fishes = [];
+        let collisionMap = null;
+        let collisionImage = new Image();
+        
+        // Configuración de sprites de peces
+        const totalFishSprites = 10; // Ajusta este número según cuántos sprites tengas
+        const fishSprites = [];
+        
+        // Cargar todos los sprites de peces
+        for (let i = 1; i <= totalFishSprites; i++) {
+            const img = new Image();
+            img.src = `fish_${i}.webp`;
+            fishSprites.push(img);
+        }
+        
+        // Cargar imagen de mapa de colisión
+        collisionImage.onload = function() {
+            // Configurar canvas del mismo tamaño que el acuario
+            collisionCanvas.width = aquarium.offsetWidth;
+            collisionCanvas.height = aquarium.offsetHeight;
+            
+            // Dibujar la imagen del mapa de colisión en el canvas
+            ctx.drawImage(collisionImage, 0, 0, collisionCanvas.width, collisionCanvas.height);
+            
+            // Obtener los datos de píxeles una sola vez
+            collisionMap = ctx.getImageData(0, 0, collisionCanvas.width, collisionCanvas.height);
+            
+            console.log('Mapa de colisión cargado:', collisionCanvas.width, 'x', collisionCanvas.height);
+        };
+        collisionImage.src = 'collision-map.png'; // Imagen con rojo para área navegable
+        
+        // Función para verificar si un píxel es navegable (blanco en el mapa)
+        function isNavigable(x, y) {
+            if (!collisionMap) return true; // Si no hay mapa, todo es navegable
+            
+            x = Math.floor(x);
+            y = Math.floor(y);
+            
+            // Verificar límites
+            if (x < 0 || x >= collisionCanvas.width || y < 0 || y >= collisionCanvas.height) {
+                return false; // Fuera de límites = no navegable
+            }
+            
+            const index = (y * collisionCanvas.width + x) * 4;
+            const r = collisionMap.data[index];
+            const g = collisionMap.data[index + 1];
+            const b = collisionMap.data[index + 2];
+            
+            // Verificar si el píxel es blanco (área navegable)
+            // Blanco = R, G, B todos > 200
+            const isWhite = r > 200 && g > 200 && b > 200;
+            
+            return isWhite;
+        }
+        
+        class Fish {
+            constructor() {
+                this.element = document.createElement('div');
+                this.element.className = 'fish';
+                
+                // Seleccionar sprite aleatorio
+                this.spriteIndex = Math.floor(Math.random() * fishSprites.length);
+                this.sprite = fishSprites[this.spriteIndex];
+                
+                // Crear elemento de imagen
+                this.img = document.createElement('img');
+                this.img.src = this.sprite.src;
+                this.element.appendChild(this.img);
+                
+                // Dimensiones del pez
+                this.width = 80;
+                this.height = 50;
+                
+                // Posición inicial aleatoria en área navegable
+                this.findValidStartPosition();
+                
+                // Velocidad y dirección aleatorias
+                this.speedX = (Math.random() - 0.5) * 3 + 1;
+                this.speedY = (Math.random() - 0.5) * 0.5;
+                this.direction = this.speedX > 0 ? 1 : -1;
+                
+                // Actualizar elemento DOM
+                this.updateElement();
+                aquarium.appendChild(this.element);
+            }
+            
+            findValidStartPosition() {
+                // Intentar encontrar una posición válida dentro del área navegable
+                let attempts = 0;
+                let validPosition = false;
+                
+                while (!validPosition && attempts < 200) {
+                    this.x = Math.random() * (aquarium.offsetWidth - this.width);
+                    this.y = Math.random() * (aquarium.offsetHeight - this.height);
+                    
+                    // Verificar si el centro del pez está en área navegable
+                    if (isNavigable(this.x + this.width / 2, this.y + this.height / 2)) {
+                        validPosition = true;
+                    }
+                    attempts++;
+                }
+                
+                // Si no encuentra posición válida después de 200 intentos, usar posición de emergencia
+                if (!validPosition) {
+                    this.x = aquarium.offsetWidth / 2;
+                    this.y = aquarium.offsetHeight / 2;
+                    console.warn('No se encontró posición válida para el pez');
+                }
+            }
+            
+            updateElement() {
+                this.element.style.left = this.x + 'px';
+                this.element.style.top = this.y + 'px';
+                
+                // Voltear el pez según su dirección
+                if (this.direction < 0) {
+                    this.element.classList.add('flipped');
+                } else {
+                    this.element.classList.remove('flipped');
+                }
+            }
+            
+            canMoveTo(newX, newY) {
+                // Verificar múltiples puntos del pez para mejor precisión
+                const checkPoints = [
+                    {x: newX + this.width / 2, y: newY + this.height / 2}, // Centro
+                    {x: newX + 15, y: newY + this.height / 2}, // Izquierda
+                    {x: newX + this.width - 15, y: newY + this.height / 2}, // Derecha
+                    {x: newX + this.width / 2, y: newY + 10}, // Arriba
+                    {x: newX + this.width / 2, y: newY + this.height - 10}, // Abajo
+                ];
+                
+                // Si algún punto no está en área navegable, no puede moverse
+                for (let point of checkPoints) {
+                    if (!isNavigable(point.x, point.y)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            
+            update() {
+                // Calcular nueva posición
+                const newX = this.x + this.speedX;
+                const newY = this.y + this.speedY;
+                
+                // Verificar colisión horizontal
+                if (!this.canMoveTo(newX, this.y)) {
+                    this.speedX *= -1;
+                    this.direction *= -1;
+                    // Pequeño ajuste para evitar que se quede atascado
+                    this.x -= this.speedX * 0.5;
+                } else {
+                    this.x = newX;
+                }
+                
+                // Verificar colisión vertical
+                if (!this.canMoveTo(this.x, newY)) {
+                    this.speedY *= -1;
+                    // Pequeño ajuste para evitar que se quede atascado
+                    this.y -= this.speedY * 0.5;
+                } else {
+                    this.y = newY;
+                }
+                
+                // Variación aleatoria en la velocidad (simula natación natural)
+                if (Math.random() < 0.02) {
+                    this.speedY += (Math.random() - 0.5) * 0.3;
+                    this.speedY = Math.max(-1.2, Math.min(1.2, this.speedY));
+                }
+                
+                if (Math.random() < 0.01) {
+                    this.speedX += (Math.random() - 0.5) * 0.4;
+                    this.speedX = Math.max(-3, Math.min(3, this.speedX));
+                    
+                    // Actualizar dirección según la velocidad
+                    if (this.speedX > 0 && this.direction < 0) this.direction = 1;
+                    if (this.speedX < 0 && this.direction > 0) this.direction = -1;
+                }
+                
+                this.updateElement();
+            }
+            
+            remove() {
+                this.element.remove();
+            }
+        }
+        
+        function createFish(count) {
+            // Eliminar peces existentes
+            fishes.forEach(fish => fish.remove());
+            fishes = [];
+            
+            // Crear nuevos peces
+            for (let i = 0; i < count; i++) {
+                fishes.push(new Fish());
+            }
+        }
+        
+        // Animar peces
+        function animateFishes() {
+            fishes.forEach(fish => fish.update());
+            requestAnimationFrame(animateFishes);
+        }
+        
+        // Control de número de peces
+        fishSlider.addEventListener('input', function() {
+            const count = parseInt(this.value);
+            fishLabel.textContent = count;
+            createFish(count);
+        });
+        
+        // Inicializar después de que las imágenes carguen
+        window.addEventListener('load', function() {
+            // Dar tiempo para que el mapa de colisión se cargue
+            setTimeout(() => {
+                if (collisionMap) {
+                    createFish(10);
+                    animateFishes();
+                } else {
+                    console.error('El mapa de colisión no se cargó correctamente');
+                }
+            }, 800);
+        });
+    </script>
+</body>
+</html>
