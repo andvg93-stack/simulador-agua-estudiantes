@@ -1,0 +1,6 @@
+[
+  {
+    "type": "pageerror",
+    "text": "Uncaught SecurityError: Failed to execute 'getImageData' on 'CanvasRenderingContext2D': The canvas has been tainted by cross-origin data."
+  }
+]

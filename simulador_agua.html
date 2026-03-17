@@ -45,51 +45,244 @@
         .app {
             width: 100vw;
             height: 100vh;
-            padding: 10px;
+            padding: 8px;
             display: grid;
             grid-template-rows: auto 1fr;
-            gap: 8px;
+            gap: 6px;
             background: linear-gradient(180deg, #1a2f4f 0%, #10233d 100%);
         }
 
         .metrics-panel {
             background: rgba(243, 247, 255, 0.97);
-            border-radius: 10px;
+            border-radius: 12px;
             border: 1px solid var(--border);
-            padding: 8px;
+            padding: 4px;
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 6px;
+            gap: 4px;
         }
 
         .metric-card {
-            background: var(--card-bg);
-            border: 1px solid var(--border);
-            border-radius: 8px;
+            --metric-accent: #2f7de1;
+            --metric-soft: rgba(47, 125, 225, 0.12);
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, var(--metric-soft) 100%);
+            border: 1px solid rgba(132, 161, 206, 0.35);
+            border-radius: 12px;
             padding: 6px 8px;
             min-height: 58px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 46px;
+            align-items: stretch;
+            gap: 8px;
+            box-shadow: 0 10px 24px rgba(18, 41, 76, 0.08);
+            transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+        }
+
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            inset: 0 auto auto 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, var(--metric-accent), rgba(255, 255, 255, 0));
+        }
+
+        .metric-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 26px rgba(18, 41, 76, 0.12);
+        }
+
+        .metric-card[data-tone="ph"] {
+            --metric-accent: #2f7de1;
+            --metric-soft: rgba(47, 125, 225, 0.12);
+        }
+
+        .metric-card[data-tone="od"] {
+            --metric-accent: #159c84;
+            --metric-soft: rgba(21, 156, 132, 0.14);
+        }
+
+        .metric-card[data-tone="dbo"] {
+            --metric-accent: #ce8a16;
+            --metric-soft: rgba(206, 138, 22, 0.14);
+        }
+
+        .metric-card[data-tone="turbidez"] {
+            --metric-accent: #b96c35;
+            --metric-soft: rgba(185, 108, 53, 0.14);
+        }
+
+        .metric-card[data-tone="nitratos"] {
+            --metric-accent: #4c9e43;
+            --metric-soft: rgba(76, 158, 67, 0.14);
+        }
+
+        .metric-card[data-tone="fosfatos"] {
+            --metric-accent: #d95e4d;
+            --metric-soft: rgba(217, 94, 77, 0.14);
+        }
+
+        .metric-card[data-tone="conductividad"] {
+            --metric-accent: #2d87b9;
+            --metric-soft: rgba(45, 135, 185, 0.14);
+        }
+
+        .metric-card[data-tone="icg"] {
+            --metric-accent: #0c8b8c;
+            --metric-soft: rgba(12, 139, 140, 0.14);
+        }
+
+        .metric-copy {
+            min-width: 0;
+            display: grid;
+            gap: 4px;
+        }
+
+        .metric-top {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .metric-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 9px;
+            display: grid;
+            place-items: center;
+            color: #ffffff;
+            background: linear-gradient(145deg, var(--metric-accent), rgba(14, 35, 63, 0.92));
+            box-shadow: 0 7px 14px rgba(18, 41, 76, 0.14);
+            flex-shrink: 0;
+        }
+
+        .metric-icon svg {
+            width: 16px;
+            height: 16px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 1.8;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .metric-heading {
+            min-width: 0;
         }
 
         .metric-label {
             font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
             color: #516d98;
-            margin-bottom: 4px;
+            margin-bottom: 1px;
+        }
+
+        .metric-caption {
+            font-size: 9px;
+            color: #6b80a5;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .metric-status {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            justify-items: center;
+            align-items: stretch;
+            gap: 5px;
+            min-width: 0;
+            padding-left: 8px;
+            border-left: 1px solid rgba(132, 161, 206, 0.28);
+        }
+
+        .metric-level {
+            width: 100%;
+            border-radius: 999px;
+            padding: 3px 4px;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            background: rgba(77, 104, 148, 0.14);
+            color: #35507b;
+            text-align: center;
+        }
+
+        .metric-card[data-state="good"] .metric-level {
+            background: rgba(22, 140, 94, 0.16);
+            color: #116e50;
+        }
+
+        .metric-card[data-state="warn"] .metric-level {
+            background: rgba(198, 132, 18, 0.18);
+            color: #9b6700;
+        }
+
+        .metric-card[data-state="bad"] .metric-level {
+            background: rgba(204, 74, 61, 0.16);
+            color: #a53027;
+        }
+
+        .metric-value-row {
+            display: flex;
+            align-items: baseline;
+            justify-content: flex-start;
+            flex-wrap: wrap;
+            gap: 5px 8px;
         }
 
         .metric-value {
             font-size: 18px;
-            font-weight: 600;
+            line-height: 1;
+            font-weight: 700;
             color: #132c50;
+        }
+
+        .metric-unit {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            color: #6c82a8;
+            text-align: left;
+        }
+
+        .metric-scale {
+            display: grid;
+            grid-template-rows: repeat(3, minmax(0, 1fr));
+            width: 10px;
+            height: 100%;
+            min-height: 34px;
+            gap: 4px;
+            justify-self: center;
+        }
+
+        .metric-scale span {
+            width: 100%;
+            height: auto;
+            border-radius: 999px;
+            background: rgba(88, 112, 153, 0.18);
+            transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+        }
+
+        .metric-card[data-level="low"] .metric-scale span[data-band="low"],
+        .metric-card[data-level="medium"] .metric-scale span[data-band="medium"],
+        .metric-card[data-level="high"] .metric-scale span[data-band="high"] {
+            background: var(--metric-accent);
+            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.7), 0 0 0 4px var(--metric-soft);
+            transform: scaleX(1.12);
         }
 
         .content {
             min-height: 0;
             display: grid;
             grid-template-columns: 1.95fr 1fr;
-            gap: 8px;
+            gap: 6px;
         }
 
         .scene-frame {
@@ -123,6 +316,26 @@
             border-radius: 8px;
         }
 
+        .scene-filter-defs {
+            position: absolute;
+            width: 0;
+            height: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .underwater-stack {
+            position: absolute;
+            left: 0;
+            top: 36%;
+            width: 100%;
+            height: 64%;
+            z-index: 80;
+            pointer-events: none;
+            filter: url(#underwater-refraction-filter);
+            transform: translateZ(0);
+        }
+
         .scene-overlays {
             position: absolute;
             inset: 0;
@@ -137,6 +350,23 @@
             height: 100%;
             object-fit: cover;
             z-index: 0;
+        }
+
+        .underwater-stack .water-overlay {
+            z-index: 24;
+            clip-path: url(#wave-clip);
+        }
+
+        .underwater-stack .filtered-plants-overlay {
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: calc(100% / 0.64);
+            transform: translateY(-36%);
+            object-fit: cover;
+            z-index: 26;
+            opacity: 0.9;
+            clip-path: url(#wave-clip);
         }
         
         .scene-overlay.plants {
@@ -182,7 +412,7 @@
 
         .cross-section {
             width: 100%;
-            height: 64%;
+            height: 100%;
             position: relative;
             z-index: 2;
             overflow: hidden;
@@ -622,14 +852,77 @@
             font-size: 9px;
             color: #6c7ea0;
         }
+
+        @media (max-width: 1180px) {
+            .metrics-panel {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 720px) {
+            .metrics-panel {
+                grid-template-columns: 1fr;
+            }
+
+            .metric-card {
+                min-height: 72px;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="app">
         <section class="metrics-panel" id="metricsPanel">
-            <div class="metric-card"><div class="metric-label">pH</div><div class="metric-value" id="metric-ph">7.0</div></div>
+            <article class="metric-card" data-metric="ph" data-tone="ph" data-level="medium" data-state="good">
+                <div class="metric-top">
+                    <div class="metric-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M12 3C9 6.8 6.5 9.7 6.5 13a5.5 5.5 0 0 0 11 0C17.5 9.7 15 6.8 12 3Z"></path>
+                            <path d="M9.5 13.5c.5 1 1.3 1.7 2.5 2"></path>
+                        </svg>
+                    </div>
+                    <div class="metric-heading">
+                        <div class="metric-label">pH</div>
+                        <div class="metric-caption">Balance ácido-base</div>
+                    </div>
+                    <div class="metric-level" data-role="level">Medio</div>
+                </div>
+                <div class="metric-value-row">
+                    <div class="metric-value" id="metric-ph">7.0</div>
+                    <div class="metric-unit">escala</div>
+                </div>
+                <div class="metric-scale" aria-hidden="true">
+                    <span data-band="low"></span>
+                    <span data-band="medium"></span>
+                    <span data-band="high"></span>
+                </div>
+            </article>
             <div class="metric-card"><div class="metric-label">Oxígeno disuelto (mg/L)</div><div class="metric-value" id="metric-od">7.0</div></div>
-            <div class="metric-card"><div class="metric-label">DBO (mg/L)</div><div class="metric-value" id="metric-dbo">10.0</div></div>
+            <article class="metric-card" data-metric="dbo" data-tone="dbo" data-level="medium" data-state="warn">
+                <div class="metric-top">
+                    <div class="metric-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M8 4v5l-3.5 5.5A3 3 0 0 0 7 19h10a3 3 0 0 0 2.5-4.5L16 9V4"></path>
+                            <path d="M9 4h6"></path>
+                            <path d="M8 13h8"></path>
+                        </svg>
+                    </div>
+                    <div class="metric-heading">
+                        <div class="metric-label">DBO</div>
+                        <div class="metric-caption">Materia organica consumida</div>
+                    </div>
+                    <div class="metric-level" data-role="level">Medio</div>
+                </div>
+                <div class="metric-value-row">
+                    <div class="metric-value" id="metric-dbo">10.0</div>
+                    <div class="metric-unit">mg/L</div>
+                </div>
+                <div class="metric-scale" aria-hidden="true">
+                    <span data-band="low"></span>
+                    <span data-band="medium"></span>
+                    <span data-band="high"></span>
+                </div>
+            </article>
             <div class="metric-card"><div class="metric-label">Turbidez (NTU)</div><div class="metric-value" id="metric-turbidez">70</div></div>
             <div class="metric-card"><div class="metric-label">Nitratos (mg/L)</div><div class="metric-value" id="metric-nitratos">15.0</div></div>
             <div class="metric-card"><div class="metric-label">Fosfatos (mg/L)</div><div class="metric-value" id="metric-fosfatos">2.0</div></div>
@@ -648,9 +941,20 @@
         <section class="content">
             <div class="scene-frame">
                 <div class="scene-title">Simulación del río en tiempo real</div>
+                <svg class="scene-filter-defs" aria-hidden="true" focusable="false">
+                    <defs>
+                        <filter id="underwater-refraction-filter" x="-12%" y="-12%" width="124%" height="124%">
+                            <feTurbulence type="turbulence" baseFrequency="0.008 0.03" numOctaves="2" seed="5" result="turbulence">
+                                <animate attributeName="baseFrequency" values="0.008 0.03;0.014 0.05;0.008 0.03" dur="12s" repeatCount="indefinite"></animate>
+                            </feTurbulence>
+                            <feDisplacementMap in="SourceGraphic" in2="turbulence" scale="9" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+                        </filter>
+                    </defs>
+                </svg>
                 <div class="top-scene">
                  
                 </div>
+                <div class="underwater-stack">
                 <div class="cross-section">
                     <!-- SVG con clip-path para las ondulaciones -->
                     <svg width="0" height="0" style="position: absolute;">
@@ -685,11 +989,12 @@
                         <img class="bottom-overlay" src="assets/visual/background/bottom.webp" alt="" onerror="this.style.display='none'">
                     </div>
                 </div>
+                    <img class="water-overlay" src="assets/visual/background/water.webp" alt="" onerror="this.style.display='none'">
+                    <img class="scene-overlay plants filtered-plants-overlay" src="assets/visual/background/background_plants.webp" alt="" onerror="this.style.display='none'">
+                </div>
                 <img class="collision-overlay" id="collisionOverlay" src="assets/collision-map.png" alt="Mapa de colisión" onerror="this.style.display='none'" style="display:none">
                 <div class="scene-overlays" aria-hidden="true">
                     <img class="scene-overlay" src="assets/visual/background/background.webp" alt="" onerror="this.style.display='none'">
-                    <img class="scene-overlay plants" src="assets/visual/background/background_plants.webp" alt="" onerror="this.style.display='none'">
-                    <img class="water-overlay" src="assets/visual/background/water.webp" alt="" onerror="this.style.display='none'">
 
                 </div>
                 <div class="trash-layer" id="trashLayer" aria-hidden="true"></div>
@@ -699,67 +1004,67 @@
 
             <aside class="controls-panel" id="controlsPanel">
                 <div class="block">
-                    <h3>Consumo de agua diario</h3>
-                    <div class="control-row"><label>Número de casas</label><span class="value" data-out="numCasas">10</span></div>
+                    <h3>💧Consumo de agua diario</h3>
+                    <div class="control-row"><label>🏘️Número de casas</label><span class="value" data-out="numCasas">10</span></div>
                     <input type="range" id="numCasas" min="1" max="500" value="10">
-                    <div class="control-row"><label>Tiempo ducha diaria (minutos)</label><span class="value" data-out="ducha">10</span></div>
+                    <div class="control-row"><label>🚿Tiempo ducha diaria (minutos)</label><span class="value" data-out="ducha">10</span></div>
                     <input type="range" id="ducha" min="5" max="40" value="10">
-                    <div class="control-row"><label>Descargas de inodoro (por día)</label><span class="value" data-out="inodoro">4</span></div>
+                    <div class="control-row"><label>🚽Descargas de inodoro (por día)</label><span class="value" data-out="inodoro">4</span></div>
                     <input type="range" id="inodoro" min="1" max="10" value="4">
-                    <div class="control-row"><label>Lavado de manos (por día)</label><span class="value" data-out="manos">4</span></div>
+                    <div class="control-row"><label>✋Lavado de manos (por día)</label><span class="value" data-out="manos">4</span></div>
                     <input type="range" id="manos" min="1" max="10" value="4">
-                    <div class="control-row"><label>Lavado de loza (por día)</label><span class="value" data-out="loza">2</span></div>
+                    <div class="control-row"><label>🍽️Lavado de loza (por día)</label><span class="value" data-out="loza">2</span></div>
                     <input type="range" id="loza" min="1" max="6" value="2">
-                    <div class="control-row"><label>Lavadora de ropa (semana)</label><span class="value" data-out="lavadora">2</span></div>
+                    <div class="control-row"><label>🧼Lavadora de ropa (semana)</label><span class="value" data-out="lavadora">2</span></div>
                     <input type="range" id="lavadora" min="1" max="7" value="2">
                     <div class="choice-row">
-                        <label><input type="radio" name="dientes" value="abierta" checked> Cepillado: llave abierta</label>
+                        <label><input type="radio" name="dientes" value="abierta" checked> 🪥Cepillado: llave abierta</label>
                         <label><input type="radio" name="dientes" value="cerrada"> Llave cerrada</label>
                     </div>
-                    <label class="choice-row"><input type="checkbox" id="riego"> Riego de jardín</label>
+                    <label class="choice-row"><input type="checkbox" id="riego"> 🪴Riego de jardín</label>
                 </div>
 
                 <div class="block">
-                    <h3>Detergentes y saneamiento</h3>
+                    <h3>🍶Detergentes y saneamiento</h3>
                     <div class="checks-grid">
-                        <label><input type="checkbox" id="det-ropa" checked> Detergente de ropa</label>
-                        <label><input type="checkbox" id="lavaloza" checked> Lavaloza</label>
-                        <label><input type="checkbox" id="cloro" checked> Lejía/cloro</label>
-                        <label><input type="checkbox" id="desinfectante" checked> Desinfectante</label>
-                        <label><input type="checkbox" id="shampoo" checked> Shampoo/jabón</label>
-                        <label><input type="checkbox" id="suavizante"> Suavizante</label>
+                        <label><input type="checkbox" id="det-ropa" checked> 👚Detergente de ropa</label>
+                        <label><input type="checkbox" id="lavaloza" checked> 🧽Lavaloza</label>
+                        <label><input type="checkbox" id="cloro" checked> ⚪Lejía/cloro</label>
+                        <label><input type="checkbox" id="desinfectante" checked> 🦠Desinfectante</label>
+                        <label><input type="checkbox" id="shampoo" checked> 🧴Shampoo/jabón</label>
+                        <label><input type="checkbox" id="suavizante"> 🫧Suavizante</label>
                     </div>
                     <select id="tratamiento">
-                        <option value="planta">Planta de tratamiento</option>
-                        <option value="pozo">Pozo séptico</option>
-                        <option value="descarga">Descarga directa</option>
+                        <option value="planta">🏭Planta de tratamiento</option>
+                        <option value="pozo"> 🕳️Pozo séptico</option>
+                        <option value="descarga">💩Descarga directa</option>
                     </select>
                     <div class="hint">El tipo de saneamiento cambia el aporte final de contaminantes.</div>
                 </div>
 
                 <div class="block">
-                    <h3>Agropecuario</h3>
+                    <h3>🌾Agropecuario</h3>
                     <select id="fertilizantes">
                         <option value="0">Uso de fertilizantes: no uso</option>
                         <option value="1">Uso de fertilizantes: hasta 200kg/ha</option>
                         <option value="2">Uso de fertilizantes: hasta 500kg/ha</option>
                         <option value="3">Uso de fertilizantes: hasta 800kg/ha</option>
                     </select>
-                    <div class="control-row"><label>Pollos</label></div>
+                    <div class="control-row"><label>🐔Pollos</label></div>
                     <input type="range" id="pollos" min="0" max="200" value="20">
-                    <div class="control-row"><label>Ovejas</label></div>
+                    <div class="control-row"><label>🐑Ovejas</label></div>
                     <input type="range" id="ovejas" min="0" max="200" value="10">
-                    <div class="control-row"><label>Vacas</label></div>
+                    <div class="control-row"><label>🐮Vacas</label></div>
                     <input type="range" id="vacas" min="0" max="200" value="5">
-                    <div class="control-row"><label>Cerdos</label></div>
+                    <div class="control-row"><label>🐷Cerdos</label></div>
                     <input type="range" id="cerdos" min="0" max="200" value="8">
                 </div>
 
                 <div class="block">
-                    <h3>Residuos</h3>
-                    <label class="choice-row"><input type="checkbox" id="separacion" checked> Separación adecuada</label>
-                    <label class="choice-row"><input type="checkbox" id="botadero"> Botadero cercano</label>
-                    <label class="choice-row"><input type="checkbox" id="quema"> Quema de residuos</label>
+                    <h3>🗑️Residuos</h3>
+                    <label class="choice-row"><input type="checkbox" id="separacion" checked> ♻️Separación adecuada</label>
+                    <label class="choice-row"><input type="checkbox" id="botadero"> 🗑️Botadero cercano</label>
+                    <label class="choice-row"><input type="checkbox" id="quema"> 🔥Quema de residuos</label>
                     <div class="hint">La combinación de residuos impacta turbidez, DBO y nutrientes.</div>
                 </div>
             </aside>
@@ -769,6 +1074,3 @@
     <script src="simulador_agua_app.js"></script>
 </body>
 </html>
-
-
-

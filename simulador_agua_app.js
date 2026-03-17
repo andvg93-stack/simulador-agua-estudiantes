@@ -1,4 +1,5 @@
 const sceneFrame = document.querySelector(".scene-frame");
+const metricsPanel = document.getElementById("metricsPanel");
 const river = document.getElementById("river");
 const lightRaysLayer = river.querySelector(".light-rays");
 const animalLayer = document.getElementById("animalLayer");
@@ -77,6 +78,119 @@ let pendingLightRayProfile = {
     fadeMin: 4.6,
     fadeMax: 7.2
 };
+const metricDefinitions = {
+    ph: {
+        label: "pH",
+        caption: "Balance &aacute;cido-base",
+        unit: "escala",
+        tone: "ph",
+        defaultValue: "7.0",
+        icon: `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3C9 6.8 6.5 9.7 6.5 13a5.5 5.5 0 0 0 11 0C17.5 9.7 15 6.8 12 3Z"></path>
+                <path d="M9.5 13.5c.5 1 1.3 1.7 2.5 2"></path>
+            </svg>
+        `
+    },
+    od: {
+        label: "Ox&iacute;geno disuelto",
+        caption: "Aire disponible en el agua",
+        unit: "mg/L",
+        tone: "od",
+        defaultValue: "7.0",
+        icon: `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="8" cy="10" r="3"></circle>
+                <circle cx="15.5" cy="8.5" r="2.5"></circle>
+                <circle cx="14" cy="15" r="4"></circle>
+            </svg>
+        `
+    },
+    dbo: {
+        label: "DBO",
+        caption: "Materia organica consumida",
+        unit: "mg/L",
+        tone: "dbo",
+        defaultValue: "10.0",
+        icon: `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8 4v5l-3.5 5.5A3 3 0 0 0 7 19h10a3 3 0 0 0 2.5-4.5L16 9V4"></path>
+                <path d="M9 4h6"></path>
+                <path d="M8 13h8"></path>
+            </svg>
+        `
+    },
+    turbidez: {
+        label: "Turbidez",
+        caption: "Particulas suspendidas",
+        unit: "NTU",
+        tone: "turbidez",
+        defaultValue: "70",
+        icon: `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 9c2-2 4-2 6 0s4 2 6 0 4-2 4 0"></path>
+                <path d="M4 15c2-2 4-2 6 0s4 2 6 0 4-2 4 0"></path>
+                <circle cx="8" cy="12" r="1"></circle>
+                <circle cx="16" cy="12" r="1"></circle>
+            </svg>
+        `
+    },
+    nitratos: {
+        label: "Nitratos",
+        caption: "Nutrientes nitrogenados",
+        unit: "mg/L",
+        tone: "nitratos",
+        defaultValue: "15.0",
+        icon: `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 4v16"></path>
+                <path d="M12 9c4 0 6-2 7-4 0 6-2.5 10-7 10"></path>
+                <path d="M12 11c-4 0-6-2-7-4 0 6 2.5 10 7 10"></path>
+            </svg>
+        `
+    },
+    fosfatos: {
+        label: "Fosfatos",
+        caption: "Nutrientes fosforados",
+        unit: "mg/L",
+        tone: "fosfatos",
+        defaultValue: "2.0",
+        icon: `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 4l3 3-3 3-3-3 3-3Z"></path>
+                <path d="M12 10v10"></path>
+                <path d="M8 15h8"></path>
+                <path d="M9 20h6"></path>
+            </svg>
+        `
+    },
+    conductividad: {
+        label: "Conductividad",
+        caption: "Sales y carga ionica",
+        unit: "&micro;S/cm",
+        tone: "conductividad",
+        defaultValue: "420",
+        icon: `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M13 2 6 13h5l-1 9 8-12h-5l0-8Z"></path>
+            </svg>
+        `
+    },
+    icg: {
+        label: "&Iacute;ndice global",
+        caption: "Estado general del rio",
+        unit: "0-100",
+        tone: "icg",
+        defaultValue: "50",
+        icon: `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3 19 6v6c0 4.2-2.8 7.7-7 9-4.2-1.3-7-4.8-7-9V6l7-3Z"></path>
+                <path d="m9 12 2 2 4-4"></path>
+            </svg>
+        `
+    }
+};
+const metricOrder = ["ph", "od", "dbo", "turbidez", "nitratos", "fosfatos", "conductividad", "icg"];
 
 class FishEntity {
     constructor({ species, dead = false }) {
@@ -284,6 +398,102 @@ function map(value, inMin, inMax, outMin, outMax) {
 
 function lerp(start, end, t) {
     return start + (end - start) * t;
+}
+
+function renderMetricsPanel() {
+    if (!metricsPanel) return;
+
+    metricsPanel.innerHTML = metricOrder
+        .map((metricKey) => {
+            const metric = metricDefinitions[metricKey];
+            return `
+                <article class="metric-card" data-metric="${metricKey}" data-tone="${metric.tone}" data-level="medium" data-state="warn">
+                    <div class="metric-copy">
+                        <div class="metric-top">
+                            <div class="metric-icon">${metric.icon}</div>
+                            <div class="metric-heading">
+                                <div class="metric-label">${metric.label}</div>
+                                <div class="metric-caption">${metric.caption}</div>
+                            </div>
+                        </div>
+                        <div class="metric-value-row">
+                            <div class="metric-value" id="metric-${metricKey}">${metric.defaultValue}</div>
+                            <div class="metric-unit">${metric.unit}</div>
+                        </div>
+                    </div>
+                    <div class="metric-status">
+                        <div class="metric-level" data-role="level">Medio</div>
+                        <div class="metric-scale" aria-hidden="true">
+                            <span data-band="low"></span>
+                            <span data-band="medium"></span>
+                            <span data-band="high"></span>
+                        </div>
+                    </div>
+                </article>
+            `;
+        })
+        .join("");
+}
+
+function resolveMetricDescriptor(metricKey, rawValue) {
+    const value = Number(rawValue);
+
+    switch (metricKey) {
+        case "ph":
+            if (value < 6.5) return { level: "low", label: "Bajo", state: "bad" };
+            if (value < 6.8) return { level: "low", label: "Bajo", state: "warn" };
+            if (value <= 7.6) return { level: "medium", label: "Medio", state: "good" };
+            if (value <= 8.0) return { level: "high", label: "Alto", state: "warn" };
+            return { level: "high", label: "Alto", state: "bad" };
+        case "od":
+            if (value < 5) return { level: "low", label: "Bajo", state: "bad" };
+            if (value < 7) return { level: "medium", label: "Medio", state: "warn" };
+            return { level: "high", label: "Alto", state: "good" };
+        case "dbo":
+            if (value < 8) return { level: "low", label: "Bajo", state: "good" };
+            if (value < 20) return { level: "medium", label: "Medio", state: "warn" };
+            return { level: "high", label: "Alto", state: "bad" };
+        case "turbidez":
+            if (value < 40) return { level: "low", label: "Bajo", state: "good" };
+            if (value < 120) return { level: "medium", label: "Medio", state: "warn" };
+            return { level: "high", label: "Alto", state: "bad" };
+        case "nitratos":
+            if (value < 10) return { level: "low", label: "Bajo", state: "good" };
+            if (value < 50) return { level: "medium", label: "Medio", state: "warn" };
+            return { level: "high", label: "Alto", state: "bad" };
+        case "fosfatos":
+            if (value < 0.8) return { level: "low", label: "Bajo", state: "good" };
+            if (value < 3) return { level: "medium", label: "Medio", state: "warn" };
+            return { level: "high", label: "Alto", state: "bad" };
+        case "conductividad":
+            if (value < 300) return { level: "low", label: "Bajo", state: "good" };
+            if (value < 700) return { level: "medium", label: "Medio", state: "warn" };
+            return { level: "high", label: "Alto", state: "bad" };
+        case "icg":
+            if (value < 40) return { level: "low", label: "Bajo", state: "bad" };
+            if (value < 70) return { level: "medium", label: "Medio", state: "warn" };
+            return { level: "high", label: "Alto", state: "good" };
+        default:
+            return { level: "medium", label: "Medio", state: "warn" };
+    }
+}
+
+function updateMetricVisual(metricKey, rawValue) {
+    if (!metricsPanel) return;
+
+    const card = metricsPanel.querySelector(`[data-metric="${metricKey}"]`);
+    if (!card) return;
+
+    const descriptor = resolveMetricDescriptor(metricKey, rawValue);
+    const labelNode = card.querySelector('[data-role="level"]');
+
+    card.dataset.level = descriptor.level;
+    card.dataset.state = descriptor.state;
+    card.setAttribute("aria-label", `${metricKey} ${descriptor.label}`);
+
+    if (labelNode) {
+        labelNode.textContent = descriptor.label;
+    }
 }
 
 function mixRgb(from, to, t) {
@@ -516,7 +726,6 @@ function applyLightToScene(metrics, visual) {
     const clarity = clamp(1 - turbidityNorm, 0, 1);
     const lightStrength = clamp(0.2 + luz * 0.8, 0, 1);
     const bedLift = clamp(0.18 + clarity * 0.55 + luz * 0.27, 0, 1);
-
     const bedTop = mixRgb([58, 43, 31], [125, 104, 80], bedLift);
     const bedMid = mixRgb([44, 32, 24], [96, 74, 55], bedLift);
     const bedBottom = mixRgb([27, 17, 12], [68, 49, 35], bedLift * 0.9);
@@ -850,13 +1059,21 @@ function updateSimulation() {
     updateTrashSprites(state);
 
     setMetricText("metric-ph", metrics.ph.toFixed(1));
+    updateMetricVisual("ph", metrics.ph);
     setMetricText("metric-od", metrics.od.toFixed(1));
+    updateMetricVisual("od", metrics.od);
     setMetricText("metric-dbo", metrics.dbo.toFixed(1));
+    updateMetricVisual("dbo", metrics.dbo);
     setMetricText("metric-turbidez", Math.round(metrics.turbidez));
+    updateMetricVisual("turbidez", metrics.turbidez);
     setMetricText("metric-nitratos", metrics.nitratos.toFixed(1));
+    updateMetricVisual("nitratos", metrics.nitratos);
     setMetricText("metric-fosfatos", metrics.fosfatos.toFixed(2));
+    updateMetricVisual("fosfatos", metrics.fosfatos);
     setMetricText("metric-conductividad", Math.round(metrics.conductividad));
+    updateMetricVisual("conductividad", metrics.conductividad);
     setMetricText("metric-icg", metrics.indiceGlobal);
+    updateMetricVisual("icg", metrics.indiceGlobal);
     setMetricText("metric-caudal", (metrics.caudalEfectivo_Ls ?? 0).toFixed(2));
     setMetricText("metric-load", Math.round(metrics.pollutantLoad));
     setMetricText("metric-color", visual.qualityLabel);
@@ -883,6 +1100,7 @@ collisionImage.onerror = () => {
 
 collisionImage.src = "assets/collision-map.png";
 
+renderMetricsPanel();
 createRocks();
 animateFishes();
 updateSimulation();
