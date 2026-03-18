@@ -5,6 +5,8 @@ const lightRaysLayer = river.querySelector(".light-rays");
 const animalLayer = document.getElementById("animalLayer");
 const trashLayer = document.getElementById("trashLayer");
 const treatmentOverlay = document.getElementById("treatmentOverlay");
+const hiddenExportMetricsNode = document.getElementById("hiddenExportMetrics");
+const downloadWaterCsvButton = document.getElementById("downloadWaterCsv");
 const model = window.WATER_QUALITY_MODEL;
 
 if (!model) {
@@ -191,6 +193,21 @@ const metricDefinitions = {
     }
 };
 const metricOrder = ["ph", "od", "dbo", "turbidez", "nitratos", "fosfatos", "conductividad", "icg"];
+const exportFieldDefinitions = [
+    { key: "oxigenoDisuelto", label: "Ox\u00edgeno disuelto mg/L", digits: 2 },
+    { key: "oxigenoSaturacion", label: "Ox\u00edgeno de saturaci\u00f3n mg/L", digits: 2 },
+    { key: "sst", label: "SST mg/L", digits: 2 },
+    { key: "dqo", label: "DQO mg/L", digits: 2 },
+    { key: "conductividad", label: "Conductividad uS/cm", digits: 0 },
+    { key: "ph", label: "pH", digits: 2 },
+    { key: "nt", label: "NT mg/L", digits: 2 },
+    { key: "pt", label: "PT mg/L", digits: 2 },
+    { key: "dbo5", label: "DBO5 mg/L", digits: 2 },
+    { key: "alcalinidad", label: "Alcalinidad mg/L Ca CO3", digits: 2 },
+    { key: "dureza", label: "Dureza mg/L CaCO3", digits: 2 },
+    { key: "coliformesTotales", label: "Coliformes totales NMP/100mL", digits: 0 }
+];
+let latestExportMetrics = null;
 
 class FishEntity {
     constructor({ species, dead = false }) {
@@ -494,6 +511,111 @@ function updateMetricVisual(metricKey, rawValue) {
     if (labelNode) {
         labelNode.textContent = descriptor.label;
     }
+}
+
+function formatExportValue(value, digits = 2) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return "";
+    return numericValue.toFixed(digits);
+}
+
+function csvEscape(value) {
+    const text = String(value ?? "");
+    if (/[",\r\n]/.test(text)) {
+        return `"${text.replace(/"/g, '""')}"`;
+    }
+    return text;
+}
+
+function calculateExportMetrics(metrics, state) {
+    const pollutantLoad = Number.isFinite(Number(metrics?.pollutantLoad))
+        ? Number(metrics.pollutantLoad)
+        : Number(metrics?.pollutantLoadLegacy ?? 0);
+    const ph = Number.isFinite(Number(metrics?.ph)) ? Number(metrics.ph) : 7;
+    const od = Math.max(0, Number(metrics?.od ?? 0));
+    const dbo5 = Math.max(0, Number(metrics?.dbo ?? 0));
+    const turbidez = Math.max(0, Number(metrics?.turbidez ?? 0));
+    const nitratos = Math.max(0, Number(metrics?.nitratos ?? 0));
+    const fosfatos = Math.max(0, Number(metrics?.fosfatos ?? 0));
+    const conductividad = Math.max(0, Number(metrics?.conductividad ?? 0));
+    const fertilizantes = Math.max(0, Number(state?.fertilizantes ?? 0));
+    const detergentes = Math.max(0, Number(state?.detergentes ?? 0));
+    const conductivityPenalty = clamp(map(conductividad, 120, 1400, 0.05, 0.9), 0.05, 0.9);
+    const oxygenSaturationBase = clamp(9.45 - conductivityPenalty - Math.abs(ph - 7) * 0.08, 6.5, 9.45);
+    const oxygenSaturation = Math.max(od, oxygenSaturationBase);
+    const sst = clamp(turbidez * 1.18 + Math.max(0, dbo5 - 2) * 0.35, 3, 450);
+    const dqo = clamp(dbo5 * 1.85 + sst * 0.12, dbo5, 650);
+    const nt = clamp(nitratos * 1.16 + Math.max(0, dbo5 - 2) * 0.05 + fertilizantes * 0.35, 0.2, 260);
+    const pt = clamp(fosfatos * 1.12 + detergentes * 0.015 + fertilizantes * 0.02, 0.02, 240);
+    const alcalinidad = clamp(conductividad * 0.36 + (ph - 7) * 22 + 25, 20, 350);
+    const dureza = clamp(conductividad * 0.52 + Math.max(0, alcalinidad - 80) * 0.18, 25, 500);
+    const treatmentPenaltyByType = {
+        planta: 0.15,
+        pozo: 0.65,
+        descarga: 1.1
+    };
+    const treatmentPenalty = treatmentPenaltyByType[state?.tratamiento] ?? 0.4;
+    const residuesPenalty =
+        (state?.botadero ? 0.35 : 0) +
+        (state?.quema ? 0.12 : 0) +
+        (state?.separacion ? -0.08 : 0.15);
+    const domesticPressure = clamp(map(Number(state?.numCasas ?? 10), 1, 500, 0.02, 0.55), 0.02, 0.55);
+    const logColiformes = clamp(2.2 + pollutantLoad / 38 + treatmentPenalty + residuesPenalty + domesticPressure, 1.8, 6.2);
+    const coliformesTotales = Math.round(Math.pow(10, logColiformes));
+
+    return {
+        oxigenoDisuelto: od,
+        oxigenoSaturacion: oxygenSaturation,
+        sst,
+        dqo,
+        conductividad,
+        ph,
+        nt,
+        pt,
+        dbo5,
+        alcalinidad,
+        dureza,
+        coliformesTotales
+    };
+}
+
+function syncHiddenExportMetrics(exportMetrics) {
+    if (!hiddenExportMetricsNode) return;
+
+    hiddenExportMetricsNode.innerHTML = exportFieldDefinitions
+        .map(
+            ({ key, label, digits }) =>
+                `<span data-export-key="${key}" data-export-label="${label}">${formatExportValue(exportMetrics[key], digits)}</span>`
+        )
+        .join("");
+}
+
+function buildExportCsv(exportMetrics) {
+    const header = exportFieldDefinitions.map(({ label }) => csvEscape(label)).join(",");
+    const values = exportFieldDefinitions
+        .map(({ key, digits }) => csvEscape(formatExportValue(exportMetrics[key], digits)))
+        .join(",");
+    return `\uFEFF${header}\r\n${values}\r\n`;
+}
+
+function downloadExportCsv(exportMetrics) {
+    const now = new Date();
+    const pad = (value) => String(value).padStart(2, "0");
+    const timestamp = [
+        now.getFullYear(),
+        pad(now.getMonth() + 1),
+        pad(now.getDate())
+    ].join("-") + "_" + [pad(now.getHours()), pad(now.getMinutes()), pad(now.getSeconds())].join("-");
+    const blob = new Blob([buildExportCsv(exportMetrics)], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `calidad_agua_${timestamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function mixRgb(from, to, t) {
@@ -1055,8 +1177,11 @@ function updateSimulation() {
     updateTreatmentOverlay(state.tratamiento);
     const metrics = computeWaterQuality(state);
     const visual = applyWaterVisual(metrics);
+    const exportMetrics = calculateExportMetrics(metrics, state);
     updateLivestockSprites(state);
     updateTrashSprites(state);
+    latestExportMetrics = exportMetrics;
+    syncHiddenExportMetrics(exportMetrics);
 
     setMetricText("metric-ph", metrics.ph.toFixed(1));
     updateMetricVisual("ph", metrics.ph);
@@ -1081,12 +1206,21 @@ function updateSimulation() {
     setMetricText("metric-algae", visual.algaeCount);
     setMetricText("metric-plants", visual.plantCount);
     setMetricText("metric-bubbles", visual.bubbleCount);
-
 }
 
 document.getElementById("controlsPanel").addEventListener("input", updateSimulation);
 document.getElementById("controlsPanel").addEventListener("change", updateSimulation);
 window.addEventListener("resize", refreshCollisionMap);
+
+if (downloadWaterCsvButton) {
+    downloadWaterCsvButton.addEventListener("click", () => {
+        if (!latestExportMetrics) {
+            updateSimulation();
+        }
+        if (!latestExportMetrics) return;
+        downloadExportCsv(latestExportMetrics);
+    });
+}
 
 collisionImage.onload = () => {
     collisionImageLoaded = true;
